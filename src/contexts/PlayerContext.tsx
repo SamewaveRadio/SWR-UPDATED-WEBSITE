@@ -69,6 +69,7 @@ interface PlayerContextValue extends PlayerState {
   toggleLive: () => void;
   playArchive: (show: MixcloudShow) => void;
   pauseArchive: () => void;
+  closeArchive: () => void;
   toggleArchive: () => void;
   setVolume: (volume: number) => void;
   switchToLive: () => void;
@@ -168,6 +169,41 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }, [state.volume]);
 
+  const stopProgressPolling = () => {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = null;
+    }
+  };
+
+  const stopLivePlayback = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+      audioRef.current.load();
+    }
+  };
+
+  const stopArchivePlayback = () => {
+    try {
+      widgetRef.current?.pause();
+    } catch (error) {
+      console.warn('Failed to pause Mixcloud widget:', error);
+    }
+
+    stopProgressPolling();
+    widgetRef.current = null;
+
+    if (iframeRef.current) {
+      iframeRef.current.src = 'about:blank';
+      iframeRef.current = null;
+    }
+  };
+
   const initializeMixcloudWidget = async () => {
     if (!iframeRef.current || !window.Mixcloud) {
       console.error('Mixcloud widget not available');
@@ -227,29 +263,38 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }, 1000);
   };
 
-  const stopProgressPolling = () => {
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
-    }
-    if (loadingTimeoutRef.current) {
-      clearTimeout(loadingTimeoutRef.current);
-      loadingTimeoutRef.current = null;
-    }
-  };
-
   const playLive = () => {
     const streamUrl = state.liveStreamUrl;
     if (!streamUrl) {
       console.error(
         '[PlayerContext] No HTTPS stream URL configured. Set VITE_AZURACAST_STREAM_URL to an HTTPS AzuraCast stream URL.'
       );
-      setState((prev) => ({ ...prev, mode: 'live', status: 'error' }));
+      stopArchivePlayback();
+      setState((prev) => ({
+        ...prev,
+        mode: 'live',
+        status: 'error',
+        archiveNowPlaying: null,
+        archivePosition: 0,
+        archiveDuration: 0,
+        archiveNeedsGesture: false,
+      }));
       return;
     }
 
+    // Enforce one active player at a time: starting live radio always stops and closes Mixcloud.
+    stopArchivePlayback();
+
     if (audioRef.current) {
-      setState((prev) => ({ ...prev, mode: 'live', status: 'loading' }));
+      setState((prev) => ({
+        ...prev,
+        mode: 'live',
+        status: 'loading',
+        archiveNowPlaying: null,
+        archivePosition: 0,
+        archiveDuration: 0,
+        archiveNeedsGesture: false,
+      }));
       audioRef.current.src = streamUrl;
       audioRef.current.load();
       audioRef.current.play().catch((error) => {
@@ -282,11 +327,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   };
 
   const playArchive = async (show: MixcloudShow) => {
-    if (audioRef.current && state.mode === 'live' && state.status === 'playing') {
-      audioRef.current.pause();
-    }
-
-    stopProgressPolling();
+    // Enforce one active player at a time: starting Mixcloud always stops the live radio stream.
+    stopLivePlayback();
+    stopArchivePlayback();
 
     setState((prev) => ({
       ...prev,
@@ -313,7 +356,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      widgetRef.current = null;
       const success = await initializeMixcloudWidget();
       const widget = widgetRef.current as MixcloudWidget | null;
 
@@ -342,6 +384,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const closeArchive = () => {
+    stopArchivePlayback();
+    setState((prev) => ({
+      ...prev,
+      status: 'idle',
+      archiveNowPlaying: null,
+      archivePosition: 0,
+      archiveDuration: 0,
+      archiveNeedsGesture: false,
+    }));
+  };
+
   const toggleArchive = () => {
     if (state.mode === 'archive') {
       if (state.status === 'playing') {
@@ -358,17 +412,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   };
 
   const switchToLive = () => {
-    if (state.mode === 'archive' && state.status === 'playing') {
-      pauseArchive();
-    }
     playLive();
   };
 
   const switchToArchive = () => {
-    if (state.mode === 'live' && state.status === 'playing') {
-      pauseLive();
-    }
-    setState((prev) => ({ ...prev, mode: 'archive' }));
+    stopLivePlayback();
+    setState((prev) => ({
+      ...prev,
+      mode: 'archive',
+      status: prev.archiveNowPlaying ? prev.status : 'idle',
+    }));
   };
 
   const getArchiveIframeRef = () => iframeRef.current;
@@ -384,6 +437,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     toggleLive,
     playArchive,
     pauseArchive,
+    closeArchive,
     toggleArchive,
     setVolume,
     switchToLive,
