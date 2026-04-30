@@ -3,7 +3,6 @@ import { Play, Pause, Volume2, VolumeX, X } from 'lucide-react';
 import { useAzuraCast } from '../hooks/useAzuraCast';
 import { useAudioPlayer } from '../contexts/AudioPlayerContext';
 
-// Production playback requires an HTTPS stream URL. Set VITE_AZURACAST_STREAM_URL.
 const CONFIGURED_STREAM_URL = import.meta.env.VITE_AZURACAST_STREAM_URL as string | undefined;
 
 export function AudioPlayer() {
@@ -14,7 +13,10 @@ export function AudioPlayer() {
   const { nowPlaying, isLoading } = useAzuraCast();
   const { isPlayerVisible, closePlayer } = useAudioPlayer();
 
-  const streamUrl = CONFIGURED_STREAM_URL || nowPlaying?.listenUrl || null;
+  const candidateListenUrl = nowPlaying?.listenUrl;
+  const streamUrl =
+    CONFIGURED_STREAM_URL ||
+    (candidateListenUrl?.startsWith('https://') ? candidateListenUrl : null);
 
   useEffect(() => {
     const audio = new Audio();
@@ -43,9 +45,7 @@ export function AudioPlayer() {
   useEffect(() => {
     if (isPlayerVisible && audioRef.current) {
       if (!streamUrl) {
-        console.error(
-          '[AudioPlayer] No HTTPS stream URL configured. Set VITE_AZURACAST_STREAM_URL to an HTTPS AzuraCast stream URL.'
-        );
+        console.error('[AudioPlayer] No HTTPS stream URL. Set VITE_AZURACAST_STREAM_URL.');
         return;
       }
       if (!isPlaying) {
@@ -68,9 +68,7 @@ export function AudioPlayer() {
         setIsPlaying(false);
       } else {
         if (!streamUrl) {
-          console.error(
-            '[AudioPlayer] No HTTPS stream URL configured. Set VITE_AZURACAST_STREAM_URL.'
-          );
+          console.error('[AudioPlayer] No HTTPS stream URL. Set VITE_AZURACAST_STREAM_URL.');
           return;
         }
         audioRef.current.src = streamUrl;

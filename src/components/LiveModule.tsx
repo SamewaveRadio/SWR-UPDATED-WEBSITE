@@ -1,12 +1,21 @@
 import { useEffect, useState } from 'react';
 import { Play } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { ScheduleEntry } from '../types';
 import { useAzuraCast } from '../hooks/useAzuraCast';
 import { usePlayer } from '../contexts/PlayerContext';
 
+interface LiveScheduleEntry {
+  id: string;
+  show?: {
+    title?: string;
+    resident?: {
+      name?: string;
+    };
+  } | null;
+}
+
 export function LiveModule() {
-  const [liveShow, setLiveShow] = useState<ScheduleEntry | null>(null);
+  const [liveShow, setLiveShow] = useState<LiveScheduleEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const { nowPlaying, isLoading: radioLoading, error: radioError } = useAzuraCast();
   const player = usePlayer();

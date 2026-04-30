@@ -3,12 +3,6 @@ import { Play, Pause, Volume2, X } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { buildMixcloudWidgetSrc } from '../lib/mixcloudUtils';
 
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
 export function FooterPlayer() {
   const player = usePlayer();
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);

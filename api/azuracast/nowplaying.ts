@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const AZURACAST_API_BASE = (process.env.AZURACAST_API_BASE || 'http://89.167.70.233/api').replace(/\/$/, '');
+const AZURACAST_API_BASE = (process.env.AZURACAST_API_BASE || 'https://azuracast.samewaveradio.com/api').replace(/\/$/, '');
 const AZURACAST_STATION_ID = process.env.AZURACAST_STATION_ID?.trim();
 
 interface RawSong {
@@ -96,7 +96,7 @@ function transform(raw: RawNowPlaying) {
   });
 
   return {
-    isLive: raw.is_online ?? Boolean(currentSong),
+    isLive: raw.is_online === true,
     stationName: raw.station?.name || '',
     listenUrl,
     track: currentSong

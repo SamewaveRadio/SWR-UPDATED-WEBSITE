@@ -101,9 +101,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const { nowPlaying } = useAzuraCast();
 
   useEffect(() => {
+    const candidateUrl = nowPlaying?.listenUrl;
+    const safeListenUrl =
+      candidateUrl && candidateUrl.startsWith('https://') ? candidateUrl : null;
+
     setState((prev) => ({
       ...prev,
-      liveStreamUrl: CONFIGURED_STREAM_URL || nowPlaying?.listenUrl || prev.liveStreamUrl,
+      liveStreamUrl: CONFIGURED_STREAM_URL || safeListenUrl || prev.liveStreamUrl,
       liveNowPlaying: nowPlaying?.track
         ? {
             title: nowPlaying.track.title,

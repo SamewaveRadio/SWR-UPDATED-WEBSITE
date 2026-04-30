@@ -39,19 +39,19 @@ export interface Episode {
 export interface AzuraCastTrack {
   title: string;
   artist: string;
-  artworkUrl?: string;
-  startedAt?: string;
+  artworkUrl?: string | null;
+  startedAt?: string | null;
 }
 
 export interface AzuraCastDJ {
-  name?: string;
+  name?: string | null;
 }
 
 export interface AzuraCastHistoryItem {
   title: string;
   artist: string;
-  artworkUrl?: string;
-  startedAt: string;
+  artworkUrl?: string | null;
+  startedAt: string | null;
 }
 
 export interface AzuraCastHistory {
