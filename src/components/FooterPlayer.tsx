@@ -23,27 +23,43 @@ export function FooterPlayer() {
   }, [showVolumeSlider]);
 
   useEffect(() => {
-    if (player.mode === 'archive' && player.archiveNowPlaying && iframeContainerRef.current) {
-      const existingIframe = iframeContainerRef.current.querySelector('iframe');
-      if (existingIframe) {
-        existingIframe.src = buildMixcloudWidgetSrc(player.archiveNowPlaying.url);
-        player.setArchiveIframeRef(existingIframe);
-        return;
+    const container = iframeContainerRef.current;
+
+    if (player.mode !== 'archive' || !player.archiveNowPlaying || !container) {
+      if (container) {
+        container.innerHTML = '';
       }
-
-      const newIframe = document.createElement('iframe');
-      newIframe.style.width = '100%';
-      newIframe.style.height = '60px';
-      newIframe.style.border = '0';
-      newIframe.style.display = 'block';
-      newIframe.style.pointerEvents = 'auto';
-      newIframe.style.lineHeight = '0';
-      newIframe.allow = 'autoplay';
-      newIframe.src = buildMixcloudWidgetSrc(player.archiveNowPlaying.url);
-
-      iframeContainerRef.current.appendChild(newIframe);
-      player.setArchiveIframeRef(newIframe);
+      player.setArchiveIframeRef(null);
+      return;
     }
+
+    const existingIframe = container.querySelector('iframe');
+    if (existingIframe) {
+      existingIframe.src = buildMixcloudWidgetSrc(player.archiveNowPlaying.url);
+      player.setArchiveIframeRef(existingIframe);
+      return;
+    }
+
+    const newIframe = document.createElement('iframe');
+    newIframe.style.width = '100%';
+    newIframe.style.height = '60px';
+    newIframe.style.border = '0';
+    newIframe.style.display = 'block';
+    newIframe.style.pointerEvents = 'auto';
+    newIframe.style.lineHeight = '0';
+    newIframe.allow = 'autoplay';
+    newIframe.src = buildMixcloudWidgetSrc(player.archiveNowPlaying.url);
+
+    container.appendChild(newIframe);
+    player.setArchiveIframeRef(newIframe);
+
+    return () => {
+      newIframe.src = 'about:blank';
+      if (container.contains(newIframe)) {
+        container.removeChild(newIframe);
+      }
+      player.setArchiveIframeRef(null);
+    };
   }, [player.mode, player.archiveNowPlaying]);
 
   if (player.status === 'idle') {
@@ -79,7 +95,7 @@ export function FooterPlayer() {
     if (isLive) {
       player.pauseLive();
     } else {
-      player.pauseArchive();
+      player.closeArchive();
     }
   };
 
