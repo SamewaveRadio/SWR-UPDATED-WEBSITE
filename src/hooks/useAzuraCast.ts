@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { AzuraCastNowPlaying } from '../types';
 
 const NOW_PLAYING_POLL_INTERVAL = 12000;
+const API_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const API_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 export function useAzuraCast() {
   const [nowPlaying, setNowPlaying] = useState<AzuraCastNowPlaying | null>(null);
@@ -16,11 +18,12 @@ export function useAzuraCast() {
     abortRef.current = new AbortController();
 
     try {
-      const response = await fetch('/api/azuracast/nowplaying', {
+      const response = await fetch(`${API_URL}/functions/v1/azuracast-nowplaying`, {
+        headers: { Authorization: `Bearer ${API_KEY}` },
         signal: abortRef.current.signal,
       });
 
-      if (!response.ok) throw new Error(`nowplaying returned ${response.status}`);
+      if (!response.ok) throw new Error(`azuracast-nowplaying returned ${response.status}`);
 
       const data = (await response.json()) as AzuraCastNowPlaying;
       setNowPlaying(data);
