@@ -80,7 +80,7 @@ interface PlayerContextValue extends PlayerState {
   switchToLive: () => void;
   switchToArchive: () => void;
   getArchiveIframeRef: () => HTMLIFrameElement | null;
-  setArchiveIframeRef: (iframe: HTMLIElement | null) => void;
+  setArchiveIframeRef: (iframe: HTMLIFrameElement | null) => void;
 }
 
 const PlayerContext = createContext<PlayerContextValue | undefined>(undefined);
@@ -437,7 +437,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   };
 
   const playArchive = (show: ArchiveShow) => {
-    stopLivePlayback();
     stopArchivePlayback();
 
     if (show.source === 'r2') {
