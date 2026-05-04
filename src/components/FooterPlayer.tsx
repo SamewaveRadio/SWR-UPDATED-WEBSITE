@@ -3,6 +3,20 @@ import { Play, Pause, Volume2, X } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { buildMixcloudWidgetSrc } from '../lib/mixcloudUtils';
 
+function formatTime(seconds: number): string {
+  if (!seconds || !Number.isFinite(seconds)) return '0:00';
+  const totalSeconds = Math.floor(seconds);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+  }
+
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
 export function FooterPlayer() {
   const player = usePlayer();
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
@@ -24,8 +38,12 @@ export function FooterPlayer() {
 
   useEffect(() => {
     const container = iframeContainerRef.current;
+    const isMixcloudArchive =
+      player.mode === 'archive' &&
+      player.archiveNowPlaying?.source === 'mixcloud' &&
+      player.archiveNowPlaying?.url;
 
-    if (player.mode !== 'archive' || !player.archiveNowPlaying || !container) {
+    if (!isMixcloudArchive || !container) {
       if (container) {
         container.innerHTML = '';
       }
@@ -33,9 +51,10 @@ export function FooterPlayer() {
       return;
     }
 
+    const mixcloudUrl = player.archiveNowPlaying?.url || '';
     const existingIframe = container.querySelector('iframe');
     if (existingIframe) {
-      existingIframe.src = buildMixcloudWidgetSrc(player.archiveNowPlaying.url);
+      existingIframe.src = buildMixcloudWidgetSrc(mixcloudUrl);
       player.setArchiveIframeRef(existingIframe);
       return;
     }
@@ -48,7 +67,7 @@ export function FooterPlayer() {
     newIframe.style.pointerEvents = 'auto';
     newIframe.style.lineHeight = '0';
     newIframe.allow = 'autoplay';
-    newIframe.src = buildMixcloudWidgetSrc(player.archiveNowPlaying.url);
+    newIframe.src = buildMixcloudWidgetSrc(mixcloudUrl);
 
     container.appendChild(newIframe);
     player.setArchiveIframeRef(newIframe);
@@ -68,6 +87,8 @@ export function FooterPlayer() {
 
   const isLive = player.mode === 'live';
   const isArchive = player.mode === 'archive';
+  const isR2Archive = isArchive && player.archiveNowPlaying?.source === 'r2';
+  const isMixcloudArchive = isArchive && player.archiveNowPlaying?.source === 'mixcloud';
   const isPlaying = player.status === 'playing';
   const isLoading = player.status === 'loading';
 
@@ -99,9 +120,39 @@ export function FooterPlayer() {
     }
   };
 
+  const VolumeControl = () => (
+    <div className="hidden sm:flex items-center border-l border-white/10 relative" ref={volumeRef}>
+      <button
+        onClick={() => setShowVolumeSlider(!showVolumeSlider)}
+        className="h-full px-3 sm:px-4 text-white/60 hover:text-white transition-colors"
+        title="Volume"
+      >
+        <Volume2 className="w-4 h-4" />
+      </button>
+
+      {showVolumeSlider && (
+        <div className="absolute bottom-full right-0 mb-2 bg-black border border-white/10 p-3 shadow-xl">
+          <div className="flex items-center gap-2">
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={player.volume * 100}
+              onChange={(e) => player.setVolume(Number(e.target.value) / 100)}
+              className="w-20 sm:w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0"
+            />
+            <span className="text-[10px] text-white/60 font-mono tabular-nums min-w-[2ch]">
+              {Math.round(player.volume * 100)}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-black border-t border-white/10 pb-[env(safe-area-inset-bottom)]">
-      {isArchive ? (
+      {isMixcloudArchive ? (
         <div className="flex flex-col">
           <div className="flex items-stretch h-[68px] sm:h-[60px]">
             <div
@@ -120,33 +171,7 @@ export function FooterPlayer() {
               )}
             </div>
 
-            <div className="hidden sm:flex items-center border-l border-white/10 relative" ref={volumeRef}>
-              <button
-                onClick={() => setShowVolumeSlider(!showVolumeSlider)}
-                className="h-full px-3 sm:px-4 text-white/60 hover:text-white transition-colors"
-                title="Volume"
-              >
-                <Volume2 className="w-4 h-4" />
-              </button>
-
-              {showVolumeSlider && (
-                <div className="absolute bottom-full right-0 mb-2 bg-black border border-white/10 p-3 shadow-xl">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={player.volume * 100}
-                      onChange={(e) => player.setVolume(Number(e.target.value) / 100)}
-                      className="w-20 sm:w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0"
-                    />
-                    <span className="text-[10px] text-white/60 font-mono tabular-nums min-w-[2ch]">
-                      {Math.round(player.volume * 100)}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
+            <VolumeControl />
 
             <button
               onClick={handleClose}
@@ -160,6 +185,13 @@ export function FooterPlayer() {
       ) : (
         <div className="flex items-stretch h-[68px] sm:h-16">
           <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 flex-1 min-w-0">
+            {isR2Archive && player.archiveNowPlaying?.artworkUrl && (
+              <img
+                src={player.archiveNowPlaying.artworkUrl}
+                alt={currentTitle}
+                className="w-10 h-10 object-cover flex-shrink-0"
+              />
+            )}
             <div className="flex-1 min-w-0 flex flex-col justify-center">
               <div className="text-white text-xs sm:text-sm font-medium truncate">
                 {currentTitle}
@@ -167,6 +199,11 @@ export function FooterPlayer() {
               {currentArtist && (
                 <div className="text-white/60 text-[10px] sm:text-xs truncate">
                   {currentArtist}
+                </div>
+              )}
+              {isR2Archive && player.archiveDuration > 0 && (
+                <div className="text-white/40 text-[10px] font-mono tabular-nums mt-0.5">
+                  {formatTime(player.archivePosition)} / {formatTime(player.archiveDuration)}
                 </div>
               )}
             </div>
@@ -189,33 +226,17 @@ export function FooterPlayer() {
             </button>
           </div>
 
-          <div className="hidden sm:flex items-center border-l border-white/10 relative" ref={volumeRef}>
-            <button
-              onClick={() => setShowVolumeSlider(!showVolumeSlider)}
-              className="h-full px-3 sm:px-4 text-white/60 hover:text-white transition-colors"
-              title="Volume"
-            >
-              <Volume2 className="w-4 h-4" />
-            </button>
+          <VolumeControl />
 
-            {showVolumeSlider && (
-              <div className="absolute bottom-full right-0 mb-2 bg-black border border-white/10 p-3 shadow-xl">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={player.volume * 100}
-                    onChange={(e) => player.setVolume(Number(e.target.value) / 100)}
-                    className="w-20 sm:w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0"
-                  />
-                  <span className="text-[10px] text-white/60 font-mono tabular-nums min-w-[2ch]">
-                    {Math.round(player.volume * 100)}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
+          {isR2Archive && (
+            <button
+              onClick={handleClose}
+              className="h-full px-3 sm:px-4 text-white/40 hover:text-white transition-colors border-l border-white/10"
+              title="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
       )}
 
