@@ -56,8 +56,9 @@ interface ExploreResponse {
 }
 
 const PAGE_SIZE = 24;
-const R2_CUTOFF_DATE = '2025-02-01';
+const R2_CUTOFF_MS = new Date('2025-02-01T00:00:00Z').getTime();
 const MIXCLOUD_CUTOFF_TIME = new Date('2025-01-30T00:00:00Z').getTime();
+const DEBUG_ARCHIVE = import.meta.env.DEV;
 
 function formatAiredDate(value?: string | null): string {
   if (!value) return '';
@@ -165,7 +166,6 @@ export default function ExplorePage() {
             .eq('is_published', true)
             .eq('processing_status', 'processed')
             .not('audio_url', 'is', null)
-            .gte('aired_at', R2_CUTOFF_DATE)
             .range(0, 5000),
         ]);
 
@@ -225,24 +225,59 @@ export default function ExplorePage() {
     }
 
     const data: ExploreResponse = await response.json();
+    const rawItems = data.items || [];
 
-    return (data.items || [])
+    if (DEBUG_ARCHIVE) {
+      console.log('[Archive] Mixcloud raw items returned:', rawItems.length);
+    }
+
+    const filtered = rawItems
       .filter((upload) => {
         const created = new Date(upload.created_time).getTime();
         return !Number.isNaN(created) && created < MIXCLOUD_CUTOFF_TIME;
       })
       .map(mapMixcloudUpload)
       .filter((upload) => matchesSelectedTags(upload.tags, selectedTags, matchMode));
+
+    if (DEBUG_ARCHIVE) {
+      console.log('[Archive] Mixcloud items after cutoff filter:', filtered.length);
+    }
+
+    return filtered;
   };
 
   const fetchR2Uploads = async (offset: number): Promise<ArchiveUpload[]> => {
+    if (DEBUG_ARCHIVE) {
+      console.log('[Archive] VITE_SUPABASE_URL:', import.meta.env.VITE_SUPABASE_URL);
+      console.log('[Archive] VITE_SUPABASE_ANON_KEY present:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+
+      const { data: debugRows, error: debugErr } = await supabase
+        .from('archive_items')
+        .select('id,title,is_published,processing_status,audio_url,aired_at,aired_date')
+        .limit(5);
+
+      if (debugErr) {
+        console.warn('[Archive] R2 debug query error:', debugErr.message);
+      } else {
+        console.log('[Archive] R2 debug rows returned:', debugRows?.length ?? 0);
+        if (debugRows && debugRows.length > 0) {
+          const first = debugRows[0];
+          console.log('[Archive] First row title:', first.title);
+          console.log('[Archive] First row is_published:', first.is_published);
+          console.log('[Archive] First row processing_status:', first.processing_status);
+          console.log('[Archive] First row has audio_url:', !!first.audio_url);
+          console.log('[Archive] First row aired_at:', first.aired_at);
+          console.log('[Archive] First row aired_date:', first.aired_date);
+        }
+      }
+    }
+
     let query = supabase
       .from('archive_items')
       .select('id,title,host_name,resident,description,tracklist,tags,audio_url,artwork_url,mixcloud_url,aired_at,aired_date,duration_seconds')
       .eq('is_published', true)
       .eq('processing_status', 'processed')
       .not('audio_url', 'is', null)
-      .gte('aired_at', R2_CUTOFF_DATE)
       .order('aired_at', { ascending: false, nullsFirst: false })
       .range(offset, offset + PAGE_SIZE - 1);
 
@@ -256,9 +291,21 @@ export default function ExplorePage() {
       throw error;
     }
 
-    return (data || [])
+    const rows = (data || [])
       .map((row) => mapR2Row(row as R2ArchiveRow))
+      .filter((upload) => {
+        // Apply cutoff client-side so rows with only aired_date (null aired_at) are included
+        const raw = upload.airedAt || '';
+        const t = new Date(raw.length === 10 ? raw + 'T00:00:00Z' : raw).getTime();
+        return !Number.isNaN(t) && t >= R2_CUTOFF_MS;
+      })
       .filter((upload) => matchesSelectedTags(upload.tags, selectedTags, matchMode));
+
+    if (DEBUG_ARCHIVE) {
+      console.log('[Archive] R2 rows after filter:', rows.length);
+    }
+
+    return rows;
   };
 
   const fetchUploads = async (offset: number = 0, append: boolean = false) => {
@@ -270,14 +317,32 @@ export default function ExplorePage() {
         setError(null);
       }
 
-      const [r2Uploads, mixcloudUploads] = await Promise.all([
+      const results = await Promise.allSettled([
         fetchR2Uploads(offset),
         fetchMixcloudUploads(offset),
       ]);
 
+      const r2Uploads = results[0].status === 'fulfilled' ? results[0].value : [];
+      const mixcloudUploads = results[1].status === 'fulfilled' ? results[1].value : [];
+
+      if (results[0].status === 'rejected') {
+        console.warn('[Archive] R2 source failed:', results[0].reason);
+      }
+      if (results[1].status === 'rejected') {
+        console.warn('[Archive] Mixcloud source failed:', results[1].reason);
+      }
+
+      if (DEBUG_ARCHIVE) {
+        console.log('[Archive] R2 count:', r2Uploads.length, '| Mixcloud count:', mixcloudUploads.length);
+      }
+
       const combined = [...r2Uploads, ...mixcloudUploads]
         .sort((a, b) => getSortTime(b) - getSortTime(a))
         .slice(0, PAGE_SIZE);
+
+      if (DEBUG_ARCHIVE) {
+        console.log('[Archive] Combined count:', combined.length);
+      }
 
       if (append) {
         setUploads(prev => [...prev, ...combined]);
@@ -285,8 +350,13 @@ export default function ExplorePage() {
         setUploads(combined);
       }
       setNextCursor(combined.length === PAGE_SIZE ? String(offset + PAGE_SIZE) : null);
+
+      // Only show error state if both sources failed
+      if (results[0].status === 'rejected' && results[1].status === 'rejected') {
+        throw results[0].reason;
+      }
     } catch (err) {
-      console.error('Archive load error:', err);
+      console.error('[Archive] Both sources failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to load uploads');
     } finally {
       setLoading(false);

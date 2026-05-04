@@ -72,8 +72,10 @@ export function Archive() {
                     <div className="flex items-center gap-3 sm:gap-4">
                       <button
                         onClick={() => {
+                          const urlPath = upload.url.replace('https://www.mixcloud.com', '');
                           player.playArchive({
-                            url: upload.url,
+                            source: 'mixcloud',
+                            url: urlPath,
                             title: upload.name,
                             artworkUrl: upload.pictures.extra_large,
                             createdTime: upload.created_time,

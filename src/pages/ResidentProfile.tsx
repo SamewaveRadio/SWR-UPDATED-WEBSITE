@@ -226,8 +226,10 @@ export function ResidentProfile() {
                     <div className="flex items-center gap-3 sm:gap-4">
                       <button
                         onClick={() => {
+                          const urlPath = item.url.replace('https://www.mixcloud.com', '');
                           player.playArchive({
-                            url: item.url,
+                            source: 'mixcloud',
+                            url: urlPath,
                             title: item.name,
                             residentName: resident?.name,
                             artworkUrl: item.pictures?.extra_large,
