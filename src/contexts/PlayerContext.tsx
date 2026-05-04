@@ -37,12 +37,17 @@ interface MixcloudWidget {
   };
 }
 
-interface MixcloudShow {
-  url: string;
+export type ArchiveSource = 'mixcloud' | 'r2';
+
+export interface ArchiveShow {
+  source: ArchiveSource;
+  url?: string;
+  audioUrl?: string;
   title: string;
   residentName?: string;
   artworkUrl?: string;
   createdTime?: string;
+  durationSeconds?: number;
 }
 
 type PlayerMode = 'live' | 'archive';
@@ -57,7 +62,7 @@ interface PlayerState {
     artist?: string;
   } | null;
   liveStreamUrl: string | null;
-  archiveNowPlaying: MixcloudShow | null;
+  archiveNowPlaying: ArchiveShow | null;
   archivePosition: number;
   archiveDuration: number;
   archiveNeedsGesture: boolean;
@@ -67,7 +72,7 @@ interface PlayerContextValue extends PlayerState {
   playLive: () => void;
   pauseLive: () => void;
   toggleLive: () => void;
-  playArchive: (show: MixcloudShow) => void;
+  playArchive: (show: ArchiveShow) => void;
   pauseArchive: () => void;
   closeArchive: () => void;
   toggleArchive: () => void;
@@ -75,7 +80,7 @@ interface PlayerContextValue extends PlayerState {
   switchToLive: () => void;
   switchToArchive: () => void;
   getArchiveIframeRef: () => HTMLIFrameElement | null;
-  setArchiveIframeRef: (iframe: HTMLIFrameElement | null) => void;
+  setArchiveIframeRef: (iframe: HTMLIElement | null) => void;
 }
 
 const PlayerContext = createContext<PlayerContextValue | undefined>(undefined);
@@ -126,32 +131,57 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audioRef.current = audio;
 
       audio.addEventListener('playing', () => {
-        setState((prev) => ({
-          ...prev,
-          status: prev.mode === 'live' ? 'playing' : prev.status,
-        }));
+        setState((prev) => ({ ...prev, status: 'playing', archiveNeedsGesture: false }));
       });
 
       audio.addEventListener('pause', () => {
-        setState((prev) => ({
-          ...prev,
-          status: prev.mode === 'live' ? 'paused' : prev.status,
-        }));
+        setState((prev) => ({ ...prev, status: prev.status === 'idle' ? 'idle' : 'paused' }));
       });
 
       audio.addEventListener('waiting', () => {
-        setState((prev) => ({
-          ...prev,
-          status: prev.mode === 'live' ? 'loading' : prev.status,
-        }));
+        setState((prev) => ({ ...prev, status: 'loading' }));
+      });
+
+      audio.addEventListener('timeupdate', () => {
+        setState((prev) => {
+          if (prev.mode !== 'archive' || prev.archiveNowPlaying?.source !== 'r2' || !audioRef.current) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            archivePosition: audioRef.current.currentTime || 0,
+            archiveDuration:
+              audioRef.current.duration && Number.isFinite(audioRef.current.duration)
+                ? audioRef.current.duration
+                : prev.archiveNowPlaying.durationSeconds || prev.archiveDuration,
+          };
+        });
+      });
+
+      audio.addEventListener('loadedmetadata', () => {
+        setState((prev) => {
+          if (prev.mode !== 'archive' || prev.archiveNowPlaying?.source !== 'r2' || !audioRef.current) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            archiveDuration:
+              audioRef.current.duration && Number.isFinite(audioRef.current.duration)
+                ? audioRef.current.duration
+                : prev.archiveNowPlaying.durationSeconds || prev.archiveDuration,
+          };
+        });
+      });
+
+      audio.addEventListener('ended', () => {
+        setState((prev) => ({ ...prev, status: 'paused' }));
       });
 
       audio.addEventListener('error', () => {
-        console.error('Live stream error');
-        setState((prev) => ({
-          ...prev,
-          status: prev.mode === 'live' ? 'error' : prev.status,
-        }));
+        console.error('Audio playback error');
+        setState((prev) => ({ ...prev, status: 'error' }));
       });
     }
 
@@ -180,7 +210,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const stopLivePlayback = () => {
+  const stopNativeAudio = () => {
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = '';
@@ -188,7 +218,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const stopArchivePlayback = () => {
+  const stopMixcloudPlayback = () => {
     try {
       widgetRef.current?.pause();
     } catch (error) {
@@ -202,6 +232,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       iframeRef.current.src = 'about:blank';
       iframeRef.current = null;
     }
+  };
+
+  const stopArchivePlayback = () => {
+    stopMixcloudPlayback();
+    stopNativeAudio();
   };
 
   const initializeMixcloudWidget = async () => {
@@ -282,7 +317,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Enforce one active player at a time: starting live radio always stops and closes Mixcloud.
     stopArchivePlayback();
 
     if (audioRef.current) {
@@ -326,11 +360,35 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const playArchive = async (show: MixcloudShow) => {
-    // Enforce one active player at a time: starting Mixcloud always stops the live radio stream.
-    stopLivePlayback();
-    stopArchivePlayback();
+  const playR2Archive = (show: ArchiveShow) => {
+    if (!show.audioUrl || !audioRef.current) {
+      setState((prev) => ({ ...prev, status: 'error', archiveNeedsGesture: false }));
+      return;
+    }
 
+    setState((prev) => ({
+      ...prev,
+      mode: 'archive',
+      status: 'loading',
+      archiveNowPlaying: show,
+      archivePosition: 0,
+      archiveDuration: show.durationSeconds || 0,
+      archiveNeedsGesture: false,
+    }));
+
+    audioRef.current.src = show.audioUrl;
+    audioRef.current.load();
+    audioRef.current.play().catch((error) => {
+      console.warn('R2 archive autoplay failed - user gesture required:', error);
+      setState((prev) => ({
+        ...prev,
+        status: 'paused',
+        archiveNeedsGesture: true,
+      }));
+    });
+  };
+
+  const playMixcloudArchive = async (show: ArchiveShow) => {
     setState((prev) => ({
       ...prev,
       mode: 'archive',
@@ -378,7 +436,26 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }, 1500);
   };
 
+  const playArchive = (show: ArchiveShow) => {
+    stopLivePlayback();
+    stopArchivePlayback();
+
+    if (show.source === 'r2') {
+      playR2Archive(show);
+      return;
+    }
+
+    playMixcloudArchive(show);
+  };
+
   const pauseArchive = () => {
+    if (state.archiveNowPlaying?.source === 'r2') {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      return;
+    }
+
     if (widgetRef.current) {
       widgetRef.current.pause();
     }
@@ -397,13 +474,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   };
 
   const toggleArchive = () => {
-    if (state.mode === 'archive') {
-      if (state.status === 'playing') {
-        pauseArchive();
-      } else if (widgetRef.current) {
-        setState((prev) => ({ ...prev, archiveNeedsGesture: false }));
-        widgetRef.current.play();
+    if (state.mode !== 'archive') return;
+
+    if (state.archiveNowPlaying?.source === 'r2') {
+      if (!audioRef.current) return;
+
+      if (audioRef.current.paused) {
+        audioRef.current.play().catch((error) => {
+          console.warn('Failed to play R2 archive:', error);
+          setState((prev) => ({ ...prev, status: 'error' }));
+        });
+      } else {
+        audioRef.current.pause();
       }
+      return;
+    }
+
+    if (state.status === 'playing') {
+      pauseArchive();
+    } else if (widgetRef.current) {
+      setState((prev) => ({ ...prev, archiveNeedsGesture: false }));
+      widgetRef.current.play();
     }
   };
 
@@ -416,7 +507,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   };
 
   const switchToArchive = () => {
-    stopLivePlayback();
+    stopNativeAudio();
     setState((prev) => ({
       ...prev,
       mode: 'archive',
