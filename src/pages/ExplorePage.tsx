@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { Play, ExternalLink, X } from 'lucide-react';
 import { usePlayer } from '../contexts/PlayerContext';
 import { Navigation } from '../components/Navigation';
+import { supabase } from '../lib/supabase';
 
-interface MixcloudTag {
+interface ArchiveTag {
   name: string;
-  url: string;
+  url?: string;
 }
 
 interface MixcloudUpload {
@@ -15,7 +16,38 @@ interface MixcloudUpload {
   pictures: {
     extra_large: string;
   };
-  tags: MixcloudTag[];
+  tags: ArchiveTag[];
+}
+
+interface R2ArchiveRow {
+  id: string;
+  title: string;
+  host_name: string | null;
+  resident: string | null;
+  description: string | null;
+  tracklist: string | null;
+  tags: string[] | null;
+  audio_url: string | null;
+  artwork_url: string | null;
+  mixcloud_url: string | null;
+  aired_at: string | null;
+  aired_date: string | null;
+  duration_seconds: number | null;
+}
+
+interface ArchiveUpload {
+  id: string;
+  source: 'r2' | 'mixcloud';
+  title: string;
+  displayTitle: string;
+  hostName?: string;
+  url?: string;
+  audioUrl?: string;
+  artworkUrl?: string;
+  createdTime?: string;
+  airedAt?: string;
+  durationSeconds?: number;
+  tags: ArchiveTag[];
 }
 
 interface ExploreResponse {
@@ -23,9 +55,84 @@ interface ExploreResponse {
   nextCursor: string | null;
 }
 
+const PAGE_SIZE = 24;
+const R2_CUTOFF_DATE = '2025-02-01';
+const MIXCLOUD_CUTOFF_TIME = new Date('2025-01-30T00:00:00Z').getTime();
+
+function formatAiredDate(value?: string | null): string {
+  if (!value) return '';
+
+  const dateOnly = value.slice(0, 10);
+  const match = dateOnly.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    const [, year, month, day] = match;
+    return `${month}.${day}.${year}`;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const year = String(date.getFullYear());
+  return `${month}.${day}.${year}`;
+}
+
+function getSortTime(upload: ArchiveUpload): number {
+  const value = upload.airedAt || upload.createdTime || '';
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function matchesSelectedTags(tags: ArchiveTag[], selectedTags: string[], matchMode: 'any' | 'all'): boolean {
+  if (selectedTags.length === 0) return true;
+  const itemTags = new Set(tags.map((tag) => tag.name.toLowerCase()));
+
+  if (matchMode === 'all') {
+    return selectedTags.every((tag) => itemTags.has(tag.toLowerCase()));
+  }
+
+  return selectedTags.some((tag) => itemTags.has(tag.toLowerCase()));
+}
+
+function mapR2Row(row: R2ArchiveRow): ArchiveUpload {
+  const hostName = row.host_name || row.resident || '';
+  const airedDateLabel = formatAiredDate(row.aired_date || row.aired_at);
+  const displayTitle = airedDateLabel
+    ? `${row.title} with ${hostName} (Aired ${airedDateLabel})`
+    : `${row.title} with ${hostName}`;
+
+  return {
+    id: row.id,
+    source: 'r2',
+    title: row.title,
+    displayTitle,
+    hostName,
+    audioUrl: row.audio_url || undefined,
+    url: row.mixcloud_url || undefined,
+    artworkUrl: row.artwork_url || undefined,
+    airedAt: row.aired_at || row.aired_date || undefined,
+    durationSeconds: row.duration_seconds || undefined,
+    tags: (row.tags || []).map((name) => ({ name })),
+  };
+}
+
+function mapMixcloudUpload(upload: MixcloudUpload): ArchiveUpload {
+  return {
+    id: upload.url,
+    source: 'mixcloud',
+    title: upload.name,
+    displayTitle: upload.name,
+    url: upload.url,
+    artworkUrl: upload.pictures?.extra_large,
+    createdTime: upload.created_time,
+    tags: upload.tags || [],
+  };
+}
+
 export default function ExplorePage() {
   const player = usePlayer();
-  const [uploads, setUploads] = useState<MixcloudUpload[]>([]);
+  const [uploads, setUploads] = useState<ArchiveUpload[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,15 +152,37 @@ export default function ExplorePage() {
     const fetchTags = async () => {
       try {
         setLoadingTags(true);
-        const response = await fetch(`${apiUrl}/functions/v1/mixcloud-catalogue-tags`, {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-          },
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setAvailableTags(data.tags || []);
+
+        const [mixcloudResponse, r2Response] = await Promise.allSettled([
+          fetch(`${apiUrl}/functions/v1/mixcloud-catalogue-tags`, {
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+            },
+          }),
+          supabase
+            .from('archive_items')
+            .select('tags')
+            .eq('is_published', true)
+            .eq('processing_status', 'processed')
+            .not('audio_url', 'is', null)
+            .gte('aired_at', R2_CUTOFF_DATE)
+            .range(0, 5000),
+        ]);
+
+        const tagSet = new Set<string>();
+
+        if (mixcloudResponse.status === 'fulfilled' && mixcloudResponse.value.ok) {
+          const data = await mixcloudResponse.value.json();
+          (data.tags || []).forEach((tag: string) => tagSet.add(tag));
         }
+
+        if (r2Response.status === 'fulfilled' && !r2Response.value.error) {
+          (r2Response.value.data || []).forEach((row: { tags: string[] | null }) => {
+            (row.tags || []).forEach((tag) => tagSet.add(tag));
+          });
+        }
+
+        setAvailableTags(Array.from(tagSet).sort((a, b) => a.localeCompare(b)));
       } catch (err) {
         console.error('Failed to fetch tags:', err);
       } finally {
@@ -61,7 +190,7 @@ export default function ExplorePage() {
       }
     };
     fetchTags();
-  }, []);
+  }, [apiUrl, apiKey]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -76,6 +205,62 @@ export default function ExplorePage() {
     }
   }, [showTagPicker]);
 
+  const fetchMixcloudUploads = async (offset: number): Promise<ArchiveUpload[]> => {
+    const params = new URLSearchParams();
+    params.set('limit', String(PAGE_SIZE * 2));
+    params.set('offset', offset.toString());
+    if (selectedTags.length > 0) {
+      params.set('tags', selectedTags.join(','));
+      params.set('match', matchMode);
+    }
+
+    const response = await fetch(`${apiUrl}/functions/v1/mixcloud-catalogue-query?${params.toString()}`, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch Mixcloud uploads');
+    }
+
+    const data: ExploreResponse = await response.json();
+
+    return (data.items || [])
+      .filter((upload) => {
+        const created = new Date(upload.created_time).getTime();
+        return !Number.isNaN(created) && created < MIXCLOUD_CUTOFF_TIME;
+      })
+      .map(mapMixcloudUpload)
+      .filter((upload) => matchesSelectedTags(upload.tags, selectedTags, matchMode));
+  };
+
+  const fetchR2Uploads = async (offset: number): Promise<ArchiveUpload[]> => {
+    let query = supabase
+      .from('archive_items')
+      .select('id,title,host_name,resident,description,tracklist,tags,audio_url,artwork_url,mixcloud_url,aired_at,aired_date,duration_seconds')
+      .eq('is_published', true)
+      .eq('processing_status', 'processed')
+      .not('audio_url', 'is', null)
+      .gte('aired_at', R2_CUTOFF_DATE)
+      .order('aired_at', { ascending: false, nullsFirst: false })
+      .range(offset, offset + PAGE_SIZE - 1);
+
+    if (selectedTags.length > 0 && matchMode === 'all') {
+      query = query.contains('tags', selectedTags);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw error;
+    }
+
+    return (data || [])
+      .map((row) => mapR2Row(row as R2ArchiveRow))
+      .filter((upload) => matchesSelectedTags(upload.tags, selectedTags, matchMode));
+  };
+
   const fetchUploads = async (offset: number = 0, append: boolean = false) => {
     try {
       if (append) {
@@ -85,33 +270,23 @@ export default function ExplorePage() {
         setError(null);
       }
 
-      const params = new URLSearchParams();
-      params.set('limit', '24');
-      params.set('offset', offset.toString());
-      if (selectedTags.length > 0) {
-        params.set('tags', selectedTags.join(','));
-        params.set('match', matchMode);
-      }
+      const [r2Uploads, mixcloudUploads] = await Promise.all([
+        fetchR2Uploads(offset),
+        fetchMixcloudUploads(offset),
+      ]);
 
-      const response = await fetch(`${apiUrl}/functions/v1/mixcloud-catalogue-query?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch uploads');
-      }
-
-      const data: ExploreResponse = await response.json();
+      const combined = [...r2Uploads, ...mixcloudUploads]
+        .sort((a, b) => getSortTime(b) - getSortTime(a))
+        .slice(0, PAGE_SIZE);
 
       if (append) {
-        setUploads(prev => [...prev, ...data.items]);
+        setUploads(prev => [...prev, ...combined]);
       } else {
-        setUploads(data.items);
+        setUploads(combined);
       }
-      setNextCursor(data.nextCursor);
+      setNextCursor(combined.length === PAGE_SIZE ? String(offset + PAGE_SIZE) : null);
     } catch (err) {
+      console.error('Archive load error:', err);
       setError(err instanceof Error ? err.message : 'Failed to load uploads');
     } finally {
       setLoading(false);
@@ -145,12 +320,25 @@ export default function ExplorePage() {
     setSelectedTags([]);
   };
 
-  const handlePlay = (upload: MixcloudUpload) => {
+  const handlePlay = (upload: ArchiveUpload) => {
+    if (upload.source === 'r2') {
+      player.playArchive({
+        source: 'r2',
+        audioUrl: upload.audioUrl,
+        title: upload.displayTitle,
+        residentName: upload.hostName,
+        artworkUrl: upload.artworkUrl,
+        durationSeconds: upload.durationSeconds,
+      });
+      return;
+    }
+
     player.playArchive({
+      source: 'mixcloud',
       url: upload.url,
-      title: upload.name,
-      artworkUrl: upload.pictures.extra_large,
-      createdTime: upload.created_time,
+      title: upload.displayTitle,
+      artworkUrl: upload.artworkUrl,
+      createdTime: upload.createdTime,
     });
   };
 
@@ -277,7 +465,7 @@ export default function ExplorePage() {
             <div className="space-y-0">
               {uploads.map((upload, index) => (
                 <div
-                  key={`${upload.url}-${index}`}
+                  key={`${upload.source}-${upload.id}-${index}`}
                   className="py-3 sm:py-4 border-b border-white/5 hover:bg-white/[0.02] transition-colors group"
                 >
                   <div className="flex items-center gap-3 sm:gap-4">
@@ -289,27 +477,31 @@ export default function ExplorePage() {
                       <Play className="w-3 h-3 sm:w-4 sm:h-4 text-white fill-white" />
                     </button>
 
-                    <img
-                      src={upload.pictures.extra_large}
-                      alt={upload.name}
-                      className="w-10 h-10 sm:w-12 sm:h-12 object-cover flex-shrink-0"
-                    />
+                    {upload.artworkUrl && (
+                      <img
+                        src={upload.artworkUrl}
+                        alt={upload.displayTitle}
+                        className="w-10 h-10 sm:w-12 sm:h-12 object-cover flex-shrink-0"
+                      />
+                    )}
 
                     <div className="flex-1 min-w-0">
                       <h3 className="text-sm sm:text-base font-light truncate">
-                        {upload.name}
+                        {upload.displayTitle}
                       </h3>
                     </div>
 
-                    <a
-                      href={upload.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-shrink-0 p-1.5 text-white/40 hover:text-white transition-colors"
-                      title="Open on Mixcloud"
-                    >
-                      <ExternalLink className="w-3 h-3 sm:w-4 sm:h-4" />
-                    </a>
+                    {upload.url && (
+                      <a
+                        href={upload.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-shrink-0 p-1.5 text-white/40 hover:text-white transition-colors"
+                        title={upload.source === 'mixcloud' ? 'Open on Mixcloud' : 'Open archive link'}
+                      >
+                        <ExternalLink className="w-3 h-3 sm:w-4 sm:h-4" />
+                      </a>
+                    )}
                   </div>
 
                   {upload.tags && upload.tags.length > 0 && (
