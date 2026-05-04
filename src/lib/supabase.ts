@@ -7,4 +7,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
+if (import.meta.env.DEV) {
+  console.log('[Supabase] URL:', supabaseUrl);
+  console.log('[Supabase] anon key exists:', Boolean(supabaseAnonKey));
+}
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
