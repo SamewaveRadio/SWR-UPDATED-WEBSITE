@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const AZURACAST_API_BASE = (process.env.AZURACAST_API_BASE || 'https://azuracast.samewaveradio.com/api').replace(/\/$/, '');
-const AZURACAST_STATION_ID = process.env.AZURACAST_STATION_ID?.trim();
+const AZURACAST_API_BASE = (process.env.EXPO_PUBLIC_AZURACAST_API_BASE || 'https://azuracast.samewaveradio.com/api').replace(/\/$/, '');
+const AZURACAST_STATION_ID = process.env.EXPO_PUBLIC_AZURACAST_STATION_ID?.trim();
 
 interface RawSong {
   title?: string;

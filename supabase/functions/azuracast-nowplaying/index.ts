@@ -7,11 +7,11 @@ const corsHeaders = {
 };
 
 const AZURACAST_API_BASE = (
-  Deno.env.get("AZURACAST_API_BASE") || "https://azuracast.samewaveradio.com/api"
+  Deno.env.get("EXPO_PUBLIC_AZURACAST_API_BASE") || "https://azuracast.samewaveradio.com/api"
 ).replace(/\/$/, "");
 
 const AZURACAST_STATION_ID = (
-  Deno.env.get("AZURACAST_STATION_ID") || "samewave_radio"
+  Deno.env.get("EXPO_PUBLIC_AZURACAST_STATION_ID") || "samewave_radio"
 ).toLowerCase().trim();
 
 const CACHE_DURATION = 10000;

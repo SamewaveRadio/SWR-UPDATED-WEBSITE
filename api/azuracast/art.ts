@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const AZURACAST_API_BASE = (process.env.AZURACAST_API_BASE || 'https://azuracast.samewaveradio.com/api').replace(/\/$/, '');
+const AZURACAST_API_BASE = (process.env.EXPO_PUBLIC_AZURACAST_API_BASE || 'https://azuracast.samewaveradio.com/api').replace(/\/$/, '');
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
