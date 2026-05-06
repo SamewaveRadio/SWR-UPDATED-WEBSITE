@@ -50,7 +50,7 @@ type ResidentUpload =
 
 const R2_CUTOFF_DATE = '2025-02-01';
 const R2_CUTOFF_TIME = new Date(`${R2_CUTOFF_DATE}T00:00:00`).getTime();
-const UPLOAD_PAGE_SIZE = 10;
+const UPLOAD_PAGE_SIZE = 6;
 
 function formatAiredDate(value?: string | null): string {
   if (!value) return '';
