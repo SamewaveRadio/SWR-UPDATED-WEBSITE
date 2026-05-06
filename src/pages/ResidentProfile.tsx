@@ -50,6 +50,7 @@ type ResidentUpload =
 
 const R2_CUTOFF_DATE = '2025-02-01';
 const R2_CUTOFF_TIME = new Date(`${R2_CUTOFF_DATE}T00:00:00`).getTime();
+const UPLOAD_PAGE_SIZE = 10;
 
 function formatAiredDate(value?: string | null): string {
   if (!value) return '';
@@ -125,6 +126,7 @@ export function ResidentProfile() {
   const [resident, setResident] = useState<Resident | null>(null);
   const [loading, setLoading] = useState(true);
   const [r2Uploads, setR2Uploads] = useState<R2ArchiveItem[]>([]);
+  const [visibleUploadCount, setVisibleUploadCount] = useState(UPLOAD_PAGE_SIZE);
   const [latestLoading, setLatestLoading] = useState(false);
   const [latestError, setLatestError] = useState<string | null>(null);
   const [imageFailed, setImageFailed] = useState(false);
@@ -132,13 +134,14 @@ export function ResidentProfile() {
 
   const isPlaylistUrl = resident?.mixcloud_url?.includes('/playlists/');
   const legacyPlaylistUrl = isPlaylistUrl ? resident?.mixcloud_url : null;
+  const fetchLimit = visibleUploadCount + UPLOAD_PAGE_SIZE;
   const {
     items: mixcloudItems,
     loading: mixcloudLoading,
     error: mixcloudError,
-  } = useMixcloudPlaylist(legacyPlaylistUrl, 50);
+  } = useMixcloudPlaylist(legacyPlaylistUrl, fetchLimit);
 
-  const latestUploads = useMemo(() => {
+  const allUploads = useMemo(() => {
     const mappedR2 = r2Uploads
       .filter((item) => getLocalDateSortTime(item.aired_date || item.aired_at) >= R2_CUTOFF_TIME)
       .map(mapR2Upload);
@@ -150,13 +153,17 @@ export function ResidentProfile() {
       })
       .map(mapMixcloudUpload);
 
-    return [...mappedR2, ...mappedMixcloud]
-      .sort((a, b) => b.sortTime - a.sortTime)
-      .slice(0, 6);
+    return [...mappedR2, ...mappedMixcloud].sort((a, b) => b.sortTime - a.sortTime);
   }, [r2Uploads, mixcloudItems]);
+
+  const latestUploads = useMemo(
+    () => allUploads.slice(0, visibleUploadCount),
+    [allUploads, visibleUploadCount]
+  );
 
   const uploadsLoading = latestLoading || mixcloudLoading;
   const uploadsError = latestError || (mixcloudError ? 'Unable to load legacy Mixcloud uploads' : null);
+  const hasMoreUploads = allUploads.length > visibleUploadCount;
 
   useEffect(() => {
     if (slug) fetchResident();
@@ -170,11 +177,12 @@ export function ResidentProfile() {
     return () => {
       document.title = 'Samewave Radio';
     };
-  }, [resident]);
+  }, [resident, fetchLimit]);
 
   const fetchResident = async () => {
     try {
       setImageFailed(false);
+      setVisibleUploadCount(UPLOAD_PAGE_SIZE);
       const { data: residentData } = await supabase
         .from('residents')
         .select('*')
@@ -200,7 +208,7 @@ export function ResidentProfile() {
         .eq('processing_status', 'processed')
         .not('audio_url', 'is', null)
         .order('aired_at', { ascending: false, nullsFirst: false })
-        .limit(12);
+        .limit(fetchLimit);
       if (error) throw error;
       setR2Uploads((data || []) as R2ArchiveItem[]);
     } catch (error) {
@@ -209,6 +217,10 @@ export function ResidentProfile() {
     } finally {
       setLatestLoading(false);
     }
+  };
+
+  const handleLoadMoreUploads = () => {
+    setVisibleUploadCount((current) => current + UPLOAD_PAGE_SIZE);
   };
 
   const handlePlayUpload = (upload: ResidentUpload) => {
@@ -324,8 +336,15 @@ export function ResidentProfile() {
         )}
 
         <div className="mb-8 sm:mb-12">
-          <h2 className="text-white text-base sm:text-lg font-light mb-4 sm:mb-6">Latest Uploads</h2>
-          {uploadsLoading && (
+          <div className="flex items-end justify-between gap-4 mb-4 sm:mb-6">
+            <h2 className="text-white text-base sm:text-lg font-light">Latest Uploads</h2>
+            {!uploadsLoading && latestUploads.length > 0 && (
+              <p className="text-white/40 text-xs">
+                Showing {latestUploads.length}{hasMoreUploads ? '+' : ''}
+              </p>
+            )}
+          </div>
+          {uploadsLoading && latestUploads.length === 0 && (
             <div className="py-6 sm:py-8 text-center">
               <div className="inline-block w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
             </div>
@@ -341,41 +360,55 @@ export function ResidentProfile() {
           {!uploadsLoading && !uploadsError && latestUploads.length === 0 && (
             <p className="text-white/40 text-sm py-6 sm:py-8 text-center">No uploads yet</p>
           )}
-          {!uploadsLoading && !uploadsError && latestUploads.length > 0 && (
-            <div className="space-y-px">
-              {latestUploads.map((upload) => (
-                <div key={`${upload.source}-${upload.id}`} className="py-3 sm:py-4 px-3 sm:px-4 bg-white/5 hover:bg-white/10 transition-colors group">
-                  <div className="flex items-center gap-3 sm:gap-4">
-                    <button onClick={() => handlePlayUpload(upload)} className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 transition-colors rounded-sm" title="Play">
-                      <Play className="w-3 h-3 sm:w-4 sm:h-4 text-white fill-white" />
-                    </button>
-                    {upload.artworkUrl && (
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/10 rounded-sm flex-shrink-0 overflow-hidden">
-                        <img src={upload.artworkUrl} alt={upload.displayTitle} className="w-full h-full object-cover" />
+          {!uploadsError && latestUploads.length > 0 && (
+            <>
+              <div className="space-y-px">
+                {latestUploads.map((upload) => (
+                  <div key={`${upload.source}-${upload.id}`} className="py-3 sm:py-4 px-3 sm:px-4 bg-white/5 hover:bg-white/10 transition-colors group">
+                    <div className="flex items-center gap-3 sm:gap-4">
+                      <button onClick={() => handlePlayUpload(upload)} className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 transition-colors rounded-sm" title="Play">
+                        <Play className="w-3 h-3 sm:w-4 sm:h-4 text-white fill-white" />
+                      </button>
+                      {upload.artworkUrl && (
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/10 rounded-sm flex-shrink-0 overflow-hidden">
+                          <img src={upload.artworkUrl} alt={upload.displayTitle} className="w-full h-full object-cover" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-white text-xs sm:text-sm font-medium truncate">{upload.displayTitle}</h3>
                       </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-white text-xs sm:text-sm font-medium truncate">{upload.displayTitle}</h3>
-                    </div>
-                    {upload.externalUrl && (
-                      <a href={upload.externalUrl} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 p-1.5 text-white/40 hover:text-white transition-colors" title={upload.source === 'mixcloud' ? 'Open on Mixcloud' : 'Open external archive link'}>
-                        <ExternalLink className="w-3 h-3 sm:w-4 sm:h-4" />
-                      </a>
-                    )}
-                  </div>
-                  {upload.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-2 ml-[52px] sm:ml-[64px]">
-                      {upload.tags.slice(0, 3).map((tag) => (
-                        <span key={tag} className="inline-block px-2 py-0.5 text-[10px] sm:text-xs text-white/60 border border-white/10 rounded">{tag}</span>
-                      ))}
-                      {upload.tags.length > 3 && (
-                        <span className="inline-block px-2 py-0.5 text-[10px] sm:text-xs text-white/40">+{upload.tags.length - 3}</span>
+                      {upload.externalUrl && (
+                        <a href={upload.externalUrl} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 p-1.5 text-white/40 hover:text-white transition-colors" title={upload.source === 'mixcloud' ? 'Open on Mixcloud' : 'Open external archive link'}>
+                          <ExternalLink className="w-3 h-3 sm:w-4 sm:h-4" />
+                        </a>
                       )}
                     </div>
-                  )}
+                    {upload.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2 ml-[52px] sm:ml-[64px]">
+                        {upload.tags.slice(0, 3).map((tag) => (
+                          <span key={tag} className="inline-block px-2 py-0.5 text-[10px] sm:text-xs text-white/60 border border-white/10 rounded">{tag}</span>
+                        ))}
+                        {upload.tags.length > 3 && (
+                          <span className="inline-block px-2 py-0.5 text-[10px] sm:text-xs text-white/40">+{upload.tags.length - 3}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {hasMoreUploads && (
+                <div className="mt-6 sm:mt-8 text-center">
+                  <button
+                    onClick={handleLoadMoreUploads}
+                    disabled={uploadsLoading}
+                    className="px-5 sm:px-6 py-2.5 text-xs sm:text-sm border border-white/20 text-white hover:border-white/40 hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {uploadsLoading ? 'Loading...' : 'Load More'}
+                  </button>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </div>
       </div>
