@@ -6,7 +6,6 @@ import { SchedulePreview } from '../components/SchedulePreview';
 import { ResidentsGrid } from '../components/ResidentsGrid';
 import { Shop } from '../components/Shop';
 import { Archive } from '../components/Archive';
-import { Support } from '../components/Support';
 import { Submit } from '../components/Submit';
 import { About } from '../components/About';
 import { Footer } from '../components/Footer';
@@ -41,7 +40,6 @@ export function HomePage() {
       <Archive />
       <ResidentsGrid />
       <Shop />
-      <Support />
       <Submit />
       <About />
       <Footer />

@@ -160,7 +160,6 @@ export function Navigation() {
     { id: 'schedule', label: 'SCHEDULE', type: 'section' },
     { id: 'residents', label: 'RESIDENTS', type: 'section' },
     { id: 'shop', label: 'SHOP', type: 'section' },
-    { id: 'support', label: 'SUPPORT', type: 'section' },
     { id: 'submit', label: 'SUBMIT', type: 'dropdown' },
     { id: 'about', label: 'ABOUT', type: 'section' },
   ];

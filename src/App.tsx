@@ -11,12 +11,8 @@ import { CartProvider } from './contexts/CartContext';
 import { PlayerProvider } from './contexts/PlayerContext';
 import { FooterPlayer } from './components/FooterPlayer';
 import { BreakpointIndicator } from './components/BreakpointIndicator';
-import { SupportFloatingCTA } from './components/SupportFloatingCTA';
-import { SupportModal } from './components/SupportModal';
-import { useSupportPrompt } from './hooks/useSupportPrompt';
 
 function App() {
-  const { isOpen, openModal, handleDismiss, handleSupport } = useSupportPrompt();
 
   return (
     <BrowserRouter>
@@ -33,12 +29,6 @@ function App() {
             </Routes>
             <AudioPlayer />
             <FooterPlayer />
-            <SupportFloatingCTA onClick={openModal} />
-            <SupportModal
-              isOpen={isOpen}
-              onDismiss={handleDismiss}
-              onSupport={handleSupport}
-            />
             <BreakpointIndicator />
           </CartProvider>
         </AudioPlayerProvider>
