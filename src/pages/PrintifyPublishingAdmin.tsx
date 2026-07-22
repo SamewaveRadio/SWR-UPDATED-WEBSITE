@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Lock, RefreshCw, CheckCircle2, XCircle, AlertTriangle, ExternalLink } from 'lucide-react';
+import { Lock, RefreshCw, CheckCircle2, XCircle, AlertTriangle, ExternalLink, Webhook } from 'lucide-react';
 import { Navigation } from '../components/Navigation';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -33,6 +33,8 @@ export default function PrintifyPublishingAdmin() {
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<Record<number, ProductResult | null>>({});
   const [processing, setProcessing] = useState<Record<number, boolean>>({});
+  const [webhookLoading, setWebhookLoading] = useState(false);
+  const [webhookResult, setWebhookResult] = useState<{ success: boolean; message: string } | null>(null);
 
   useEffect(() => {
     try {
@@ -155,6 +157,43 @@ export default function PrintifyPublishingAdmin() {
       }));
     } finally {
       setProcessing((prev) => ({ ...prev, [productIdStr]: false }));
+    }
+  };
+
+  const setupWebhook = async () => {
+    setWebhookLoading(true);
+    setWebhookResult(null);
+    try {
+      const response = await fetch(
+        `${SUPABASE_URL}/functions/v1/printify-webhook-setup`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to register webhook');
+      }
+
+      setWebhookResult({
+        success: true,
+        message: data.alreadyExists
+          ? `Webhook already registered (ID: ${data.webhook.id})`
+          : `Webhook registered successfully (ID: ${data.webhook.id})`,
+      });
+    } catch (err) {
+      setWebhookResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Failed to register webhook',
+      });
+    } finally {
+      setWebhookLoading(false);
     }
   };
 
@@ -340,6 +379,37 @@ export default function PrintifyPublishingAdmin() {
         )}
 
         <div className="mt-8 border border-white/10 p-4 bg-white/[0.02]">
+          <div className="flex items-start gap-3 mb-4">
+            <Webhook className="w-4 h-4 text-white/50 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-sm font-medium text-white/80 mb-1">Printify Webhook Setup</h3>
+              <p className="text-xs text-white/40 mb-3">
+                Registers the <code className="text-white/60">product:publish:started</code> webhook on Printify. Run once — duplicates are skipped automatically.
+              </p>
+              <button
+                onClick={setupWebhook}
+                disabled={webhookLoading}
+                className="flex items-center gap-2 px-4 py-2 border border-white/10 hover:border-white/30 hover:bg-white/5 text-sm transition-all disabled:opacity-50 rounded"
+              >
+                <Webhook className={`w-3.5 h-3.5 ${webhookLoading ? 'animate-pulse' : ''}`} />
+                {webhookLoading ? 'Registering...' : 'Register Webhook'}
+              </button>
+              {webhookResult && (
+                <div
+                  className={`mt-3 border p-3 text-xs ${
+                    webhookResult.success
+                      ? 'border-green-500/20 bg-green-500/5 text-green-400'
+                      : 'border-red-500/20 bg-red-500/5 text-red-400'
+                  }`}
+                >
+                  {webhookResult.message}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 border border-white/10 p-4 bg-white/[0.02]">
           <h3 className="text-sm font-medium text-white/80 mb-2">How this works</h3>
           <ul className="text-sm text-white/50 space-y-1.5">
             <li className="flex items-start gap-2">
