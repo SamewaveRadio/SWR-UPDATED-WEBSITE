@@ -54,11 +54,6 @@ function ProductCard({ product }: { product: PrintifyProduct }) {
             {product.variants[0]?.price ?? '—'}
           </span>
 
-          {product.variants.length > 1 && (
-            <span className="text-white/40 text-[10px] sm:text-xs uppercase tracking-wide">
-              {product.variants.length} options
-            </span>
-          )}
         </div>
       </div>
     </Link>
