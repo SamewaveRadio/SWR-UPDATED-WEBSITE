@@ -109,6 +109,7 @@ async function fetchPrintifyProducts(): Promise<PrintifyProduct[]> {
     headers: {
       Authorization: `Bearer ${PRINTIFY_API_TOKEN}`,
       "Content-Type": "application/json",
+      "User-Agent": "SamewaveRadio-PrintifyProducts/1.0",
     },
   });
 
@@ -118,7 +119,10 @@ async function fetchPrintifyProducts(): Promise<PrintifyProduct[]> {
   }
 
   const data = await response.json();
-  return data as PrintifyProduct[];
+  // Printify returns either a bare array or a paginated object { data: [...] }
+  if (Array.isArray(data)) return data as PrintifyProduct[];
+  if (data && Array.isArray(data.data)) return data.data as PrintifyProduct[];
+  return [];
 }
 
 Deno.serve(async (req: Request) => {
