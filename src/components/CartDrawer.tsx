@@ -184,7 +184,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   return (
     <>
       <div
-        className={`fixed inset-0 bg-black/60 z-50 transition-opacity duration-300 ${
+        className={`fixed inset-0 bg-black/60 z-[60] transition-opacity duration-300 ${
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         onClick={onClose}
@@ -197,7 +197,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
         role="dialog"
         aria-modal="true"
         aria-label="Shopping cart"
-        className={`fixed top-0 right-0 h-full w-full max-w-md bg-black border-l border-white/10 z-50 transform transition-transform duration-300 ease-out ${
+        className={`fixed top-0 right-0 h-full w-full max-w-md bg-black border-l border-white/10 z-[60] transform transition-transform duration-300 ease-out ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
