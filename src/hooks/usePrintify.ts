@@ -51,19 +51,41 @@ export function useProducts() {
 }
 
 export function useProduct(productId: string | undefined) {
-  const { products, loading, error } = useProducts();
   const [product, setProduct] = useState<PrintifyProduct | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (loading) return;
     if (!productId) {
       setProduct(null);
+      setLoading(false);
       return;
     }
-    const numericId = parseInt(productId, 10);
-    const found = products.find((p) => p.id === numericId) ?? null;
-    setProduct(found);
-  }, [productId, products, loading]);
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    fetchApi<{ item: PrintifyProduct }>(`printify-products?productId=${encodeURIComponent(productId)}`)
+      .then((data) => {
+        if (!cancelled) {
+          setProduct(data.item ?? null);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setProduct(null);
+          setError(err instanceof Error ? err.message : 'Product not found');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [productId]);
 
   return { product, loading, error };
 }
@@ -93,7 +115,48 @@ export function useCart() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setItems(loadCartFromStorage());
+    const stored = loadCartFromStorage();
+    setItems(stored);
+
+    if (stored.length === 0) return;
+
+    let cancelled = false;
+
+    fetch(`${SUPABASE_URL}/functions/v1/printify-products`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: stored.map((i) => ({
+          productId: i.productId,
+          variantId: i.variantId,
+          quantity: i.quantity,
+        })),
+      }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data.valid === false && Array.isArray(data.rejectedItems)) {
+          const rejected = new Set(
+            data.rejectedItems.map(
+              (r: { productId: number; variantId: number }) =>
+                `${r.productId}-${r.variantId}`
+            )
+          );
+          const cleaned = stored.filter(
+            (i) => !rejected.has(`${i.productId}-${i.variantId}`)
+          );
+          setItems(cleaned);
+          saveCartToStorage(cleaned);
+        }
+      })
+      .catch(() => {
+        // If validation fails, keep existing cart — server-side checkout will catch it
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const persist = useCallback((next: CartItem[]) => {
