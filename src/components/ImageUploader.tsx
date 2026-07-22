@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Upload, X, Star, GripVertical, Loader2, AlertCircle, Image as ImageIcon } from 'lucide-react';
+import { Upload, X, Star, GripVertical, Loader2, AlertCircle, Image as ImageIcon, Link } from 'lucide-react';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -121,6 +121,9 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showExternalUrl, setShowExternalUrl] = useState(false);
+  const [externalUrl, setExternalUrl] = useState('');
+  const [externalAlt, setExternalAlt] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = useCallback(async (files: FileList | null) => {
@@ -369,6 +372,67 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
         <p className="text-white/30 text-xs">
           No images yet. Upload images to display them on the product page.
         </p>
+      )}
+
+      {/* Advanced: external URL */}
+      {showExternalUrl ? (
+        <div className="mt-3 p-3 bg-white/5 rounded-lg border border-white/10">
+          <div className="flex items-center gap-2 mb-2">
+            <Link className="w-3.5 h-3.5 text-white/40" />
+            <span className="text-white/60 text-xs font-medium uppercase tracking-wider">Add External Image URL</span>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="url"
+              value={externalUrl}
+              onChange={(e) => setExternalUrl(e.target.value)}
+              placeholder="https://example.com/image.jpg"
+              className="flex-1 px-2 py-1.5 bg-black/30 text-white text-xs rounded border border-white/10 focus:outline-none focus:border-white/30 placeholder-white/30"
+            />
+            <input
+              type="text"
+              value={externalAlt}
+              onChange={(e) => setExternalAlt(e.target.value)}
+              placeholder="Alt text"
+              className="w-32 px-2 py-1.5 bg-black/30 text-white text-xs rounded border border-white/10 focus:outline-none focus:border-white/30 placeholder-white/30"
+            />
+            <button
+              onClick={() => {
+                if (!externalUrl.trim()) return;
+                onImagesChange([
+                  ...images,
+                  {
+                    src: externalUrl.trim(),
+                    alt: externalAlt.trim(),
+                    position: images.length,
+                    r2Key: null,
+                    pending: false,
+                  },
+                ]);
+                setExternalUrl('');
+                setExternalAlt('');
+                setShowExternalUrl(false);
+              }}
+              className="px-3 py-1.5 bg-white/10 text-white text-xs font-medium hover:bg-white/20 rounded transition-colors"
+            >
+              Add
+            </button>
+            <button
+              onClick={() => { setShowExternalUrl(false); setExternalUrl(''); setExternalAlt(''); }}
+              className="px-2 py-1.5 text-white/40 hover:text-white text-xs transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setShowExternalUrl(true)}
+          className="mt-3 inline-flex items-center gap-1.5 text-xs text-white/30 hover:text-white/60 transition-colors"
+        >
+          <Link className="w-3 h-3" />
+          Add external image URL
+        </button>
       )}
     </div>
   );
