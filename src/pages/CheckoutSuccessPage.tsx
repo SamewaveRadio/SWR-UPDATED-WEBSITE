@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { Navigation } from '../components/Navigation';
+import { useCartContext } from '../contexts/CartContext';
 
 export function CheckoutSuccessPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const sessionId = new URLSearchParams(window.location.search).get('session_id');
+  const { clearCart } = useCartContext();
 
   useEffect(() => {
     document.title = 'Order Confirmed — Samewave Radio';
@@ -17,11 +19,9 @@ export function CheckoutSuccessPage() {
       return;
     }
 
-    // The Stripe session ID is stored in the orders table.
-    // We don't expose order details to the public — just confirm the session exists.
-    // The webhook (future) will update the order status to 'paid'.
+    clearCart();
     setLoading(false);
-  }, [sessionId]);
+  }, [sessionId, clearCart]);
 
   return (
     <div className="min-h-screen bg-black pb-32 sm:pb-36">
