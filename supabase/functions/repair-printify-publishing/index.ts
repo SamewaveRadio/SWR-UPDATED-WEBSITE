@@ -57,7 +57,10 @@ async function fetchPrintifyProducts(): Promise<PrintifyProductListItem[]> {
   }
 
   const data = await response.json();
-  return data as PrintifyProductListItem[];
+  // Printify returns either a bare array or a paginated object { data: [...] }
+  if (Array.isArray(data)) return data as PrintifyProductListItem[];
+  if (data && Array.isArray(data.data)) return data.data as PrintifyProductListItem[];
+  return [];
 }
 
 async function fetchPrintifyProduct(productId: number): Promise<PrintifyProductDetail> {
