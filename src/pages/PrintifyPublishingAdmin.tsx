@@ -6,7 +6,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // Temporary admin password — replace or remove after use.
-const ADMIN_PASSWORD = 'samewave-repair-2026';
+const ADMIN_PASSWORD = 'Ridethewave2020!';
 const SESSION_KEY = 'printify-repair-auth';
 
 interface LockedProduct {
