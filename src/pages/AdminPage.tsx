@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, Database, Clock, Lock, LogOut, Package } from 'lucide-react';
+import { RefreshCw, Database, Clock, Lock, LogOut, Package, CheckCircle2 } from 'lucide-react';
 import { Navigation } from '../components/Navigation';
 import { AdminProducts } from '../components/AdminProducts';
+import { PrintifyRepairPanel } from '../components/PrintifyRepairPanel';
 import { useAdminAuth } from '../contexts/AdminAuthContext';
 
 interface IndexStatus {
@@ -9,7 +10,7 @@ interface IndexStatus {
   count: number;
 }
 
-type AdminTab = 'mixcloud' | 'products';
+type AdminTab = 'mixcloud' | 'products' | 'printify';
 
 function AdminLogin() {
   const { signIn } = useAdminAuth();
@@ -236,9 +237,22 @@ export default function AdminPage() {
             <Package className="w-4 h-4 inline mr-1.5" />
             Products
           </button>
+          <button
+            onClick={() => setTab('printify')}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              tab === 'printify'
+                ? 'border-white text-white'
+                : 'border-transparent text-white/40 hover:text-white/70'
+            }`}
+          >
+            <CheckCircle2 className="w-4 h-4 inline mr-1.5" />
+            Printify
+          </button>
         </div>
 
         {tab === 'products' && <AdminProducts />}
+
+        {tab === 'printify' && <PrintifyRepairPanel />}
 
         {tab === 'mixcloud' && (
           <>
