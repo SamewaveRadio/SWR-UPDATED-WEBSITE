@@ -8,22 +8,17 @@ import { useCartContext } from '../contexts/CartContext';
 import { Navigation } from '../components/Navigation';
 import { sanitizeHtml } from '../lib/sanitize';
 
-function isNumeric(str: string): boolean {
-  return /^\d+$/.test(str);
-}
-
 export function ProductPage() {
   const { productId } = useParams<{ productId: string }>();
-  const isNumericId = productId ? isNumeric(productId) : false;
 
-  const printifyHook = useProduct(isNumericId ? productId : undefined);
+  const printifyHook = useProduct(productId);
   const { session } = useAdminAuth();
   const isAdmin = Boolean(session);
-  const manualHook = useManualProductBySlug(!isNumericId ? productId : undefined, isAdmin);
+  const manualHook = useManualProductBySlug(productId, isAdmin);
 
   const product = printifyHook.product ?? manualHook.product;
-  const loading = printifyHook.loading || manualHook.loading;
-  const error = printifyHook.error ?? manualHook.error;
+  const loading = !product && (printifyHook.loading || manualHook.loading);
+  const error = product ? null : (printifyHook.error ?? manualHook.error);
   const visibility = manualHook.visibility;
   const isUnlisted = visibility === 'unlisted';
   const isManual = manualHook.product !== null;
