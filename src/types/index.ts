@@ -135,6 +135,8 @@ export interface PrintifyVariant {
   size: string | null;
   price: string;
   priceCents: number;
+  /** Internal Supabase variant UUID (manual products only) */
+  _internalVariantId?: string;
 }
 
 export interface PrintifyProduct {
@@ -149,7 +151,9 @@ export interface PrintifyProduct {
   /** For manual products, the slug used in the URL */
   _slug?: string;
   /** Visibility for noindex metadata */
-  _visibility?: 'public' | 'unlisted';
+  _visibility?: ProductVisibility;
+  /** Internal Supabase product UUID (manual products only) */
+  _internalProductId?: string;
 }
 
 export interface PrintifyProductsResponse {
@@ -159,6 +163,14 @@ export interface PrintifyProductsResponse {
 export interface CartItem {
   productId: number;
   variantId: number;
+  /** 'printify' or 'manual' — determines which backend validates the item */
+  source: ProductSource;
+  /** Internal Supabase product UUID (manual products only) */
+  internalProductId: string | null;
+  /** Internal Supabase variant UUID (manual products only) */
+  internalVariantId: string | null;
+  /** Slug for manual products, used to build cart link URLs */
+  slug: string | null;
   title: string;
   variantTitle: string;
   color: string | null;

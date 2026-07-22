@@ -32,14 +32,37 @@ Deno.serve(async (req: Request) => {
 
     const url = new URL(req.url);
     const slug = url.searchParams.get("slug");
+    const adminPreview = url.searchParams.get("preview") === "true";
 
-    // Single product by slug (for direct-link access to unlisted products)
+    // For admin preview, authenticate the caller and allow draft/archived products
+    let isAdmin = false;
+    if (adminPreview) {
+      const authHeader = req.headers.get("Authorization");
+      if (authHeader) {
+        const token = authHeader.replace("Bearer ", "");
+        const adminClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+          { auth: { persistSession: false } },
+        );
+        const { data: { user } } = await adminClient.auth.getUser(token);
+        isAdmin = Boolean(user);
+      }
+    }
+
+    // Single product by slug
     if (slug) {
+      // Public visitors can only see public and unlisted products.
+      // Admins with a valid token can preview draft and archived products.
+      const allowedVisibilities = isAdmin
+        ? ["public", "unlisted", "draft", "archived"]
+        : ["public", "unlisted"];
+
       const { data: product, error } = await supabase
         .from("products")
         .select("*")
         .eq("slug", slug)
-        .in("visibility", ["public", "unlisted"])
+        .in("visibility", allowedVisibilities)
         .maybeSingle();
 
       if (error) return jsonResponse({ error: error.message }, 500);

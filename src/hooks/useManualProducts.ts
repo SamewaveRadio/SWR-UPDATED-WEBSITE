@@ -43,6 +43,7 @@ function toPrintifyFormat(p: ManualProductResponse): PrintifyProduct {
     size: v.size,
     price: v.price,
     priceCents: v.priceCents,
+    _internalVariantId: v.id,
   }));
 
   return {
@@ -54,7 +55,8 @@ function toPrintifyFormat(p: ManualProductResponse): PrintifyProduct {
     variants,
     _source: 'manual',
     _slug: p.slug,
-    _visibility: p.visibility as 'public' | 'unlisted',
+    _visibility: p.visibility as 'public' | 'unlisted' | 'draft' | 'archived',
+    _internalProductId: p.id,
   };
 }
 
@@ -92,7 +94,7 @@ export function useManualProducts() {
   return { products, loading, error };
 }
 
-export function useManualProductBySlug(slug: string | undefined) {
+export function useManualProductBySlug(slug: string | undefined, preview = false) {
   const [product, setProduct] = useState<PrintifyProduct | null>(null);
   const [visibility, setVisibility] = useState<'public' | 'unlisted' | 'draft' | 'archived' | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,7 +111,16 @@ export function useManualProductBySlug(slug: string | undefined) {
     setLoading(true);
     setError(null);
 
-    fetch(`${SUPABASE_URL}/functions/v1/manual-products?slug=${encodeURIComponent(slug)}`)
+    const params = new URLSearchParams({ slug });
+    if (preview) params.set('preview', 'true');
+
+    const headers: Record<string, string> = {};
+    if (preview) {
+      const token = localStorage.getItem('samewave-admin-token');
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    fetch(`${SUPABASE_URL}/functions/v1/manual-products?${params.toString()}`, { headers })
       .then(async (res) => {
         if (!res.ok) {
           if (res.status === 404) throw new Error('Product not found');
@@ -133,7 +144,7 @@ export function useManualProductBySlug(slug: string | undefined) {
       });
 
     return () => { cancelled = true; };
-  }, [slug]);
+  }, [slug, preview]);
 
   return { product, visibility, loading, error };
 }

@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Minus, Plus, ShoppingBag, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useProduct } from '../hooks/usePrintify';
 import { useManualProductBySlug } from '../hooks/useManualProducts';
+import { useAdminAuth } from '../contexts/AdminAuthContext';
 import { useCartContext } from '../contexts/CartContext';
 import { Navigation } from '../components/Navigation';
 import { sanitizeHtml } from '../lib/sanitize';
@@ -16,7 +17,9 @@ export function ProductPage() {
   const isNumericId = productId ? isNumeric(productId) : false;
 
   const printifyHook = useProduct(isNumericId ? productId : undefined);
-  const manualHook = useManualProductBySlug(!isNumericId ? productId : undefined);
+  const { session } = useAdminAuth();
+  const isAdmin = Boolean(session);
+  const manualHook = useManualProductBySlug(!isNumericId ? productId : undefined, isAdmin);
 
   const product = printifyHook.product ?? manualHook.product;
   const loading = printifyHook.loading || manualHook.loading;
@@ -67,9 +70,10 @@ export function ProductPage() {
       document.title = `${product.title} — Samewave Radio`;
     }
 
-    // Add noindex/nofollow for unlisted products
+    // Add noindex/nofollow for unlisted, draft, and archived products
     let noindexMeta: HTMLMetaElement | null = null;
-    if (isUnlisted) {
+    const needsNoindex = isUnlisted || (isManual && (visibility === 'draft' || visibility === 'archived'));
+    if (needsNoindex) {
       noindexMeta = document.createElement('meta');
       noindexMeta.name = 'robots';
       noindexMeta.content = 'noindex, nofollow';
@@ -82,7 +86,7 @@ export function ProductPage() {
         document.head.removeChild(noindexMeta);
       }
     };
-  }, [product, isUnlisted]);
+  }, [product, isUnlisted, isManual, visibility]);
 
   useEffect(() => {
     setCurrentImageIndex(0);
@@ -102,6 +106,10 @@ export function ProductPage() {
         {
           productId: product.id,
           variantId: activeVariant.variantId,
+          source: isManual ? 'manual' : 'printify',
+          internalProductId: isManual ? (product._internalProductId ?? null) : null,
+          internalVariantId: isManual ? (activeVariant._internalVariantId ?? null) : null,
+          slug: isManual ? (product._slug ?? null) : null,
           title: product.title,
           variantTitle: activeVariant.title,
           color: activeVariant.color,
@@ -170,6 +178,32 @@ export function ProductPage() {
             <div className="py-16 text-center">
               <p className="text-white/40 text-lg">
                 {error || 'Product not found'}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Draft and archived manual products are not-found for public visitors
+  // Admins with a valid session can preview them
+  if (isManual && (visibility === 'draft' || visibility === 'archived') && !isAdmin) {
+    return (
+      <div className="min-h-screen bg-black">
+        <Navigation />
+        <div className="pt-20 sm:pt-24 px-4 sm:px-6">
+          <div className="max-w-6xl mx-auto">
+            <Link
+              to="/shop"
+              className="inline-flex items-center gap-2 text-white/60 hover:text-white text-sm mb-8 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Shop
+            </Link>
+            <div className="py-16 text-center">
+              <p className="text-white/40 text-lg">
+                Product not found
               </p>
             </div>
           </div>

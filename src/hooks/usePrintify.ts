@@ -126,11 +126,13 @@ export function useCart() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        items: stored.map((i) => ({
-          productId: i.productId,
-          variantId: i.variantId,
-          quantity: i.quantity,
-        })),
+        items: stored
+          .filter((i) => i.source !== 'manual')
+          .map((i) => ({
+            productId: i.productId,
+            variantId: i.variantId,
+            quantity: i.quantity,
+          })),
       }),
     })
       .then((res) => res.json())
@@ -144,7 +146,7 @@ export function useCart() {
             )
           );
           const cleaned = stored.filter(
-            (i) => !rejected.has(`${i.productId}-${i.variantId}`)
+            (i) => i.source === 'manual' || !rejected.has(`${i.productId}-${i.variantId}`)
           );
           setItems(cleaned);
           saveCartToStorage(cleaned);
@@ -153,6 +155,36 @@ export function useCart() {
       .catch(() => {
         // If validation fails, keep existing cart — server-side checkout will catch it
       });
+
+    // Validate manual products against the manual-products endpoint
+    const manualItems = stored.filter((i) => i.source === 'manual');
+    if (manualItems.length > 0) {
+      Promise.all(
+        manualItems.map((item) =>
+          fetch(`${SUPABASE_URL}/functions/v1/manual-products?slug=${encodeURIComponent(item.slug ?? '')}`)
+            .then((res) => res.ok ? res.json() : null)
+            .catch(() => null)
+        )
+      )
+        .then((results) => {
+          if (cancelled) return;
+          const validManualSlugs = new Set(
+            results
+              .filter((r): r is { product: { slug: string; visibility: string } } => r !== null && r.product && (r.product.visibility === 'public' || r.product.visibility === 'unlisted'))
+              .map((r) => r.product.slug)
+          );
+          const cleaned = stored.filter(
+            (i) => i.source !== 'manual' || (i.slug && validManualSlugs.has(i.slug))
+          );
+          if (cleaned.length !== stored.length) {
+            setItems(cleaned);
+            saveCartToStorage(cleaned);
+          }
+        })
+        .catch(() => {
+          // If validation fails, keep existing cart — server-side checkout will catch it
+        });
+    }
 
     return () => {
       cancelled = true;

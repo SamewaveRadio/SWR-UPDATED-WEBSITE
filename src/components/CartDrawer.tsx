@@ -95,7 +95,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                       className="flex gap-3 sm:gap-4 pb-4 border-b border-white/10"
                     >
                       <Link
-                        to={`/shop/${line.productId}`}
+                        to={line.source === 'manual' && line.slug ? `/shop/${line.slug}` : `/shop/${line.productId}`}
                         onClick={onClose}
                         className="w-16 h-16 sm:w-20 sm:h-20 bg-white/5 rounded overflow-hidden flex-shrink-0"
                       >
@@ -114,7 +114,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
 
                       <div className="flex-1 min-w-0">
                         <Link
-                          to={`/shop/${line.productId}`}
+                          to={line.source === 'manual' && line.slug ? `/shop/${line.slug}` : `/shop/${line.productId}`}
                           onClick={onClose}
                           className="text-white text-sm font-medium hover:text-white/80 transition-colors line-clamp-1"
                         >
