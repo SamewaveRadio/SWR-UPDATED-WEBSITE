@@ -5,6 +5,7 @@ import { ShopPage } from './pages/ShopPage';
 import { ProductPage } from './pages/ProductPage';
 import ExplorePage from './pages/ExplorePage';
 import AdminPage from './pages/AdminPage';
+import PrintifyPublishingAdmin from './pages/PrintifyPublishingAdmin';
 import { AudioPlayer } from './components/AudioPlayer';
 import { AudioPlayerProvider } from './contexts/AudioPlayerContext';
 import { CartProvider } from './contexts/CartContext';
@@ -26,6 +27,7 @@ function App() {
               <Route path="/shop" element={<ShopPage />} />
               <Route path="/shop/:productId" element={<ProductPage />} />
               <Route path="/admin" element={<AdminPage />} />
+              <Route path="/admin/printify-publishing" element={<PrintifyPublishingAdmin />} />
             </Routes>
             <AudioPlayer />
             <FooterPlayer />
