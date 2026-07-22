@@ -6,19 +6,30 @@ import { PrintifyProduct } from '../types';
 
 function ProductCard({ product }: { product: PrintifyProduct }) {
   const defaultImage = product.mockupImages[0];
+  const hoverImage = product.mockupImages[1];
+  const hasHover = Boolean(hoverImage);
 
   return (
     <Link
       to={`/shop/${product.id}`}
       className="group bg-black flex flex-col hover:bg-white/5 transition-colors focus:outline-none focus:ring-2 focus:ring-white/20"
     >
-      <div className="aspect-square bg-white/5 flex items-center justify-center overflow-hidden">
+      <div className="aspect-square bg-white/5 flex items-center justify-center overflow-hidden relative">
         {defaultImage ? (
-          <img
-            src={defaultImage.src}
-            alt={product.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          />
+          <>
+            <img
+              src={defaultImage.src}
+              alt={product.title}
+              className="w-full h-full object-cover transition-opacity duration-500 group-hover:opacity-0"
+            />
+            {hasHover && (
+              <img
+                src={hoverImage.src}
+                alt={product.title}
+                className="absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+              />
+            )}
+          </>
         ) : (
           <ShoppingBag className="w-12 h-12 text-white/20" />
         )}
