@@ -526,9 +526,8 @@ Deno.serve(async (req: Request) => {
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("Webhook error:", message);
-    return new Response(JSON.stringify({ error: message }), {
+    console.error("Webhook error:", error instanceof Error ? error.message : "Unknown error");
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
