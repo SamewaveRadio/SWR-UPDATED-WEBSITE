@@ -1,16 +1,69 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { X, Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react';
+import { X, Minus, Plus, ShoppingBag, Trash2, Loader2, AlertCircle, ChevronUp } from 'lucide-react';
 import { useCartContext } from '../contexts/CartContext';
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
 interface CartDrawerProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+interface ShippingForm {
+  email: string;
+  name: string;
+  line1: string;
+  line2: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+}
+
+const EMPTY_FORM: ShippingForm = {
+  email: '',
+  name: '',
+  line1: '',
+  line2: '',
+  city: '',
+  state: '',
+  postalCode: '',
+  country: 'US',
+};
+
+const COUNTRIES: Array<{ code: string; name: string }> = [
+  { code: 'US', name: 'United States' },
+  { code: 'CA', name: 'Canada' },
+  { code: 'GB', name: 'United Kingdom' },
+  { code: 'AU', name: 'Australia' },
+  { code: 'DE', name: 'Germany' },
+  { code: 'FR', name: 'France' },
+  { code: 'NL', name: 'Netherlands' },
+  { code: 'JP', name: 'Japan' },
+];
+
+function validateForm(form: ShippingForm): string | null {
+  if (!form.email.trim()) return 'Email is required';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'Please enter a valid email';
+  if (!form.name.trim()) return 'Full name is required';
+  if (!form.line1.trim()) return 'Address line 1 is required';
+  if (!form.city.trim()) return 'City is required';
+  if (!form.state.trim()) return 'State / Region is required';
+  if (!form.postalCode.trim()) return 'Postal code is required';
+  if (!form.country.trim()) return 'Country is required';
+  return null;
+}
+
 export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   const { items, loading, updateQuantity, removeFromCart } = useCartContext();
   const drawerRef = useRef<HTMLDivElement>(null);
+
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [form, setForm] = useState<ShippingForm>(EMPTY_FORM);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -34,11 +87,99 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     }
   }, [isOpen]);
 
+  // Reset checkout state when cart is closed
+  useEffect(() => {
+    if (!isOpen) {
+      setShowCheckout(false);
+      setFormError(null);
+      setSubmitError(null);
+    }
+  }, [isOpen]);
+
   const subtotalCents = items.reduce((sum, i) => sum + i.priceCents * i.quantity, 0);
   const subtotal = new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
   }).format(subtotalCents / 100);
+
+  const hasPrintify = items.some((i) => i.source === 'printify');
+  const hasManual = items.some((i) => i.source === 'manual');
+  const mixedOrder = hasPrintify && hasManual;
+
+  const handleCheckoutClick = () => {
+    setShowCheckout(true);
+    setFormError(null);
+    setSubmitError(null);
+  };
+
+  const handleFormChange = (field: keyof ShippingForm, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+    setFormError(null);
+    setSubmitError(null);
+  };
+
+  const handleSubmitCheckout = async () => {
+    const validationError = validateForm(form);
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+
+    setSubmitting(true);
+    setFormError(null);
+    setSubmitError(null);
+
+    try {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/create-checkout-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: items.map((item) => ({
+            source: item.source,
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            internalProductId: item.internalProductId,
+            internalVariantId: item.internalVariantId,
+            slug: item.slug,
+          })),
+          email: form.email,
+          shippingAddress: {
+            name: form.name,
+            line1: form.line1,
+            line2: form.line2 || undefined,
+            city: form.city,
+            state: form.state,
+            postalCode: form.postalCode,
+            country: form.country,
+          },
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const message = data.error || 'Checkout failed';
+        const details = Array.isArray(data.details) ? data.details.join('; ') : '';
+        setSubmitError(details ? `${message}: ${details}` : message);
+        return;
+      }
+
+      if (data.url) {
+        // Redirect to Stripe-hosted Checkout
+        window.location.href = data.url;
+      } else {
+        setSubmitError('Failed to create checkout session');
+      }
+    } catch {
+      setSubmitError('Network error. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const inputClass = 'w-full bg-white/5 border border-white/20 text-white text-sm px-3 py-2 rounded focus:outline-none focus:ring-1 focus:ring-white/40 focus:border-white/40 placeholder-white/30 transition-colors';
+  const labelClass = 'text-white/60 text-xs mb-1 block';
 
   return (
     <>
@@ -63,7 +204,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between p-4 sm:p-6 border-b border-white/10">
             <h2 className="text-lg sm:text-xl font-light text-white tracking-wide">
-              Cart
+              {showCheckout ? 'Checkout' : 'Cart'}
             </h2>
             <button
               onClick={onClose}
@@ -85,6 +226,181 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                 Continue shopping
               </button>
             </div>
+          ) : showCheckout ? (
+            <>
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+                <button
+                  onClick={() => setShowCheckout(false)}
+                  className="text-white/60 hover:text-white text-xs mb-4 flex items-center gap-1 transition-colors"
+                >
+                  <ChevronUp className="w-3 h-3" />
+                  Back to cart
+                </button>
+
+                {mixedOrder && (
+                  <div className="mb-4 p-3 bg-white/5 border border-white/10 rounded text-white/60 text-xs flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>This order contains items from different suppliers and may arrive in separate shipments.</span>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <div>
+                    <label className={labelClass}>Email</label>
+                    <input
+                      type="email"
+                      value={form.email}
+                      onChange={(e) => handleFormChange('email', e.target.value)}
+                      placeholder="you@example.com"
+                      className={inputClass}
+                      disabled={submitting}
+                      autoComplete="email"
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>Full Name</label>
+                    <input
+                      type="text"
+                      value={form.name}
+                      onChange={(e) => handleFormChange('name', e.target.value)}
+                      placeholder="Jane Doe"
+                      className={inputClass}
+                      disabled={submitting}
+                      autoComplete="name"
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>Address Line 1</label>
+                    <input
+                      type="text"
+                      value={form.line1}
+                      onChange={(e) => handleFormChange('line1', e.target.value)}
+                      placeholder="123 Main St"
+                      className={inputClass}
+                      disabled={submitting}
+                      autoComplete="address-line1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>Address Line 2 (optional)</label>
+                    <input
+                      type="text"
+                      value={form.line2}
+                      onChange={(e) => handleFormChange('line2', e.target.value)}
+                      placeholder="Apt 4B"
+                      className={inputClass}
+                      disabled={submitting}
+                      autoComplete="address-line2"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelClass}>City</label>
+                      <input
+                        type="text"
+                        value={form.city}
+                        onChange={(e) => handleFormChange('city', e.target.value)}
+                        placeholder="Brooklyn"
+                        className={inputClass}
+                        disabled={submitting}
+                        autoComplete="address-level2"
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>State / Region</label>
+                      <input
+                        type="text"
+                        value={form.state}
+                        onChange={(e) => handleFormChange('state', e.target.value)}
+                        placeholder="NY"
+                        className={inputClass}
+                        disabled={submitting}
+                        autoComplete="address-level1"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelClass}>Postal Code</label>
+                      <input
+                        type="text"
+                        value={form.postalCode}
+                        onChange={(e) => handleFormChange('postalCode', e.target.value)}
+                        placeholder="11201"
+                        className={inputClass}
+                        disabled={submitting}
+                        autoComplete="postal-code"
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Country</label>
+                      <select
+                        value={form.country}
+                        onChange={(e) => handleFormChange('country', e.target.value)}
+                        className={inputClass}
+                        disabled={submitting}
+                        autoComplete="country-name"
+                      >
+                        {COUNTRIES.map((c) => (
+                          <option key={c.code} value={c.code} className="bg-black text-white">
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {formError && (
+                  <div className="mt-4 flex items-start gap-2 text-red-400 text-xs">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                {submitError && (
+                  <div className="mt-4 flex items-start gap-2 text-red-400 text-xs">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>{submitError}</span>
+                  </div>
+                )}
+
+                <div className="mt-6 pt-4 border-t border-white/10 space-y-2">
+                  <div className="flex items-center justify-between text-white">
+                    <span className="text-sm">Subtotal</span>
+                    <span className="text-sm font-medium">{subtotal}</span>
+                  </div>
+                  <p className="text-white/40 text-xs">
+                    Shipping calculated at checkout. Taxes handled by Stripe.
+                  </p>
+                </div>
+              </div>
+
+              <div className="border-t border-white/10 p-4 sm:p-6">
+                <button
+                  onClick={handleSubmitCheckout}
+                  disabled={submitting || loading}
+                  className="w-full py-3 bg-white text-black font-medium text-sm tracking-wide hover:bg-white/90 transition-colors rounded flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Preparing checkout...
+                    </>
+                  ) : (
+                    'Continue to Stripe Checkout'
+                  )}
+                </button>
+                <p className="mt-2 text-center text-white/40 text-xs">
+                  Secure payment powered by Stripe
+                </p>
+              </div>
+            </>
           ) : (
             <>
               <div className="flex-1 overflow-y-auto p-4 sm:p-6">
@@ -178,10 +494,11 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                   Shipping and taxes calculated at checkout
                 </p>
                 <button
-                  disabled
-                  className="w-full py-3 bg-white/10 text-white/50 font-medium text-sm tracking-wide cursor-not-allowed rounded"
+                  onClick={handleCheckoutClick}
+                  disabled={loading}
+                  className="w-full py-3 bg-white text-black font-medium text-sm tracking-wide hover:bg-white/90 transition-colors rounded disabled:opacity-50"
                 >
-                  Checkout coming next
+                  Checkout
                 </button>
               </div>
             </>

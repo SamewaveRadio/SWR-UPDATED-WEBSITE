@@ -3,6 +3,7 @@ import { HomePage } from './pages/HomePage';
 import { ResidentProfile } from './pages/ResidentProfile';
 import { ShopPage } from './pages/ShopPage';
 import { ProductPage } from './pages/ProductPage';
+import { CheckoutSuccessPage } from './pages/CheckoutSuccessPage';
 import ExplorePage from './pages/ExplorePage';
 import AdminPage from './pages/AdminPage';
 import { AudioPlayer } from './components/AudioPlayer';
@@ -27,6 +28,7 @@ function App() {
                 <Route path="/residents/:slug" element={<ResidentProfile />} />
                 <Route path="/shop" element={<ShopPage />} />
                 <Route path="/shop/:productId" element={<ProductPage />} />
+                <Route path="/shop/checkout/success" element={<CheckoutSuccessPage />} />
                 <Route path="/admin" element={<AdminPage />} />
               </Routes>
             </AdminAuthProvider>
