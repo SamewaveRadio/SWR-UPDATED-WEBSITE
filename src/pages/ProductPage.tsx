@@ -6,7 +6,6 @@ import { useManualProductBySlug } from '../hooks/useManualProducts';
 import { useAdminAuth } from '../contexts/AdminAuthContext';
 import { useCartContext } from '../contexts/CartContext';
 import { Navigation } from '../components/Navigation';
-import { sanitizeHtml } from '../lib/sanitize';
 
 export function ProductPage() {
   const { productId } = useParams<{ productId: string }>();
@@ -210,7 +209,6 @@ export function ProductPage() {
   const canPurchase = !(isManual && (visibility === 'archived' || visibility === 'draft'));
 
   const hasMultipleImages = product.mockupImages.length > 1;
-  const sanitizedDescription = product.description ? sanitizeHtml(product.description) : '';
 
   return (
     <div className="min-h-screen bg-black pb-32 sm:pb-36">
@@ -404,30 +402,7 @@ export function ProductPage() {
                 </button>
               </div>
 
-              {sanitizedDescription && (
-                <div className="border-t border-white/10 pt-6">
-                  <h3 className="text-white/60 text-sm mb-3 uppercase tracking-wide">
-                    Description
-                  </h3>
-                  <div
-                    className="text-white/80 text-sm leading-relaxed prose prose-invert prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ __html: sanitizedDescription }}
-                  />
-                </div>
-              )}
 
-              {product.tags.length > 0 && (
-                <div className="mt-6 flex flex-wrap gap-2">
-                  {product.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-3 py-1 text-xs text-white/50 border border-white/10 rounded"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         </div>
