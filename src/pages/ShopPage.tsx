@@ -1,9 +1,17 @@
 import { Link } from 'react-router-dom';
 import { ShoppingBag, ArrowLeft } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useProducts } from '../hooks/usePrintify';
+import { useManualProducts } from '../hooks/useManualProducts';
 import { Navigation } from '../components/Navigation';
 import { PrintifyProduct } from '../types';
+
+function productUrl(product: PrintifyProduct): string {
+  if (product._source === 'manual' && product._slug) {
+    return `/shop/${product._slug}`;
+  }
+  return `/shop/${product.id}`;
+}
 
 function ProductCard({ product }: { product: PrintifyProduct }) {
   const defaultImage = product.mockupImages[0];
@@ -12,7 +20,7 @@ function ProductCard({ product }: { product: PrintifyProduct }) {
 
   return (
     <Link
-      to={`/shop/${product.id}`}
+      to={productUrl(product)}
       className="group bg-black flex flex-col hover:bg-white/5 transition-colors focus:outline-none focus:ring-2 focus:ring-white/20"
     >
       <div className="aspect-square bg-white/5 flex items-center justify-center overflow-hidden relative">
@@ -70,7 +78,15 @@ function ProductSkeleton() {
 }
 
 export function ShopPage() {
-  const { products, loading, error } = useProducts();
+  const { products: printifyProducts, loading: printifyLoading, error: printifyError } = useProducts();
+  const { products: manualProducts, loading: manualLoading, error: manualError } = useManualProducts();
+
+  const products = useMemo(
+    () => [...printifyProducts, ...manualProducts],
+    [printifyProducts, manualProducts]
+  );
+  const loading = printifyLoading || manualLoading;
+  const error = printifyError && manualError ? printifyError : null;
 
   useEffect(() => {
     document.title = 'Shop — Samewave Radio';

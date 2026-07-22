@@ -17,7 +17,7 @@ interface LockedProduct {
 }
 
 interface ProductResult {
-  productId: number;
+  productId: string;
   action: string;
   status: number;
   response: string;
@@ -31,8 +31,8 @@ export default function PrintifyPublishingAdmin() {
   const [products, setProducts] = useState<LockedProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [results, setResults] = useState<Record<number, ProductResult | null>>({});
-  const [processing, setProcessing] = useState<Record<number, boolean>>({});
+  const [results, setResults] = useState<Record<string, ProductResult | null>>({});
+  const [processing, setProcessing] = useState<Record<string, boolean>>({});
   const [webhookLoading, setWebhookLoading] = useState(false);
   const [webhookResult, setWebhookResult] = useState<{ success: boolean; message: string } | null>(null);
 

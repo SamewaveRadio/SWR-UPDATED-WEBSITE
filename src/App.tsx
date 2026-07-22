@@ -10,6 +10,7 @@ import { AudioPlayer } from './components/AudioPlayer';
 import { AudioPlayerProvider } from './contexts/AudioPlayerContext';
 import { CartProvider } from './contexts/CartContext';
 import { PlayerProvider } from './contexts/PlayerContext';
+import { AdminAuthProvider } from './contexts/AdminAuthContext';
 import { FooterPlayer } from './components/FooterPlayer';
 import { BreakpointIndicator } from './components/BreakpointIndicator';
 
@@ -20,15 +21,17 @@ function App() {
       <PlayerProvider>
         <AudioPlayerProvider>
           <CartProvider>
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/archive" element={<ExplorePage />} />
-              <Route path="/residents/:slug" element={<ResidentProfile />} />
-              <Route path="/shop" element={<ShopPage />} />
-              <Route path="/shop/:productId" element={<ProductPage />} />
-              <Route path="/admin" element={<AdminPage />} />
-              <Route path="/admin/printify-publishing" element={<PrintifyPublishingAdmin />} />
-            </Routes>
+            <AdminAuthProvider>
+              <Routes>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/archive" element={<ExplorePage />} />
+                <Route path="/residents/:slug" element={<ResidentProfile />} />
+                <Route path="/shop" element={<ShopPage />} />
+                <Route path="/shop/:productId" element={<ProductPage />} />
+                <Route path="/admin" element={<AdminPage />} />
+                <Route path="/admin/printify-publishing" element={<PrintifyPublishingAdmin />} />
+              </Routes>
+            </AdminAuthProvider>
             <AudioPlayer />
             <FooterPlayer />
             <BreakpointIndicator />

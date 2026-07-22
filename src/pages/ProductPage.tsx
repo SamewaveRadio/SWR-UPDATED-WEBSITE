@@ -2,13 +2,29 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Minus, Plus, ShoppingBag, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useProduct } from '../hooks/usePrintify';
+import { useManualProductBySlug } from '../hooks/useManualProducts';
 import { useCartContext } from '../contexts/CartContext';
 import { Navigation } from '../components/Navigation';
 import { sanitizeHtml } from '../lib/sanitize';
 
+function isNumeric(str: string): boolean {
+  return /^\d+$/.test(str);
+}
+
 export function ProductPage() {
   const { productId } = useParams<{ productId: string }>();
-  const { product, loading, error } = useProduct(productId);
+  const isNumericId = productId ? isNumeric(productId) : false;
+
+  const printifyHook = useProduct(isNumericId ? productId : undefined);
+  const manualHook = useManualProductBySlug(!isNumericId ? productId : undefined);
+
+  const product = printifyHook.product ?? manualHook.product;
+  const loading = printifyHook.loading || manualHook.loading;
+  const error = printifyHook.error ?? manualHook.error;
+  const visibility = manualHook.visibility;
+  const isUnlisted = visibility === 'unlisted';
+  const isManual = manualHook.product !== null;
+
   const { addToCart, loading: cartLoading } = useCartContext();
 
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
@@ -50,10 +66,23 @@ export function ProductPage() {
     if (product) {
       document.title = `${product.title} — Samewave Radio`;
     }
+
+    // Add noindex/nofollow for unlisted products
+    let noindexMeta: HTMLMetaElement | null = null;
+    if (isUnlisted) {
+      noindexMeta = document.createElement('meta');
+      noindexMeta.name = 'robots';
+      noindexMeta.content = 'noindex, nofollow';
+      document.head.appendChild(noindexMeta);
+    }
+
     return () => {
       document.title = 'Samewave Radio';
+      if (noindexMeta) {
+        document.head.removeChild(noindexMeta);
+      }
     };
-  }, [product]);
+  }, [product, isUnlisted]);
 
   useEffect(() => {
     setCurrentImageIndex(0);
@@ -61,6 +90,11 @@ export function ProductPage() {
 
   const handleAddToCart = async () => {
     if (!activeVariant || !product) return;
+
+    // Archived and draft products cannot be purchased (manual products only)
+    if (isManual && (visibility === 'archived' || visibility === 'draft')) {
+      return;
+    }
 
     setAdding(true);
     try {
@@ -143,6 +177,8 @@ export function ProductPage() {
       </div>
     );
   }
+
+  const canPurchase = !(isManual && (visibility === 'archived' || visibility === 'draft'));
 
   const hasMultipleImages = product.mockupImages.length > 1;
   const sanitizedDescription = product.description ? sanitizeHtml(product.description) : '';
@@ -235,6 +271,18 @@ export function ProductPage() {
                 {product.title}
               </h1>
 
+              {isUnlisted && (
+                <div className="mb-4 px-3 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded text-yellow-200/80 text-xs">
+                  This product is unlisted. It will not appear in the public shop, but the direct link can be shared. This is not true access control — anyone with the URL can view and purchase it.
+                </div>
+              )}
+
+              {!canPurchase && (
+                <div className="mb-4 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded text-red-200/80 text-xs">
+                  This product is not available for purchase.
+                </div>
+              )}
+
               {activeVariant && (
                 <div className="flex items-baseline gap-3 mb-6">
                   <span className="text-xl sm:text-2xl text-white font-medium">
@@ -320,10 +368,10 @@ export function ProductPage() {
 
                 <button
                   onClick={handleAddToCart}
-                  disabled={!activeVariant || cartLoading || adding}
+                  disabled={!activeVariant || cartLoading || adding || !canPurchase}
                   className="flex-1 py-3 px-6 bg-white text-black font-medium text-sm tracking-wide hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {adding ? 'ADDING...' : 'ADD TO CART'}
+                  {!canPurchase ? 'NOT AVAILABLE' : adding ? 'ADDING...' : 'ADD TO CART'}
                 </button>
               </div>
 

@@ -1,0 +1,139 @@
+import { useState, useEffect } from 'react';
+import type { PrintifyProduct, PrintifyVariant, PrintifyMockupImage } from '../types';
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+
+interface ManualProductResponse {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  source: string;
+  basePriceCents: number;
+  currency: string;
+  category: string | null;
+  tags: string[];
+  visibility: string;
+  images: Array<{ id: string; src: string; alt: string; position: number }>;
+  variants: Array<{
+    id: string;
+    variantId: string;
+    sku: string | null;
+    title: string;
+    color: string | null;
+    size: string | null;
+    price: string;
+    priceCents: number;
+  }>;
+}
+
+function toPrintifyFormat(p: ManualProductResponse): PrintifyProduct {
+  const mockupImages: PrintifyMockupImage[] = p.images.map((img, i) => ({
+    id: i + 1,
+    src: img.src,
+    position: String(img.position),
+    default: i === 0,
+  }));
+
+  const variants: PrintifyVariant[] = p.variants.map((v, i) => ({
+    variantId: i + 1,
+    sku: v.sku ?? '',
+    title: v.title,
+    color: v.color,
+    size: v.size,
+    price: v.price,
+    priceCents: v.priceCents,
+  }));
+
+  return {
+    id: -(p.slug.charCodeAt(0) + p.slug.length * 1000),
+    title: p.title,
+    description: p.description,
+    tags: p.tags,
+    mockupImages,
+    variants,
+    _source: 'manual',
+    _slug: p.slug,
+    _visibility: p.visibility as 'public' | 'unlisted',
+  };
+}
+
+export function useManualProducts() {
+  const [products, setProducts] = useState<PrintifyProduct[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+
+    fetch(`${SUPABASE_URL}/functions/v1/manual-products`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Failed to load products (${res.status})`);
+        const data = await res.json();
+        if (!cancelled) {
+          setProducts((data.items ?? []).map(toPrintifyFormat));
+          setError(null);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load products');
+          setProducts([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  return { products, loading, error };
+}
+
+export function useManualProductBySlug(slug: string | undefined) {
+  const [product, setProduct] = useState<PrintifyProduct | null>(null);
+  const [visibility, setVisibility] = useState<'public' | 'unlisted' | 'draft' | 'archived' | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!slug) {
+      setProduct(null);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    fetch(`${SUPABASE_URL}/functions/v1/manual-products?slug=${encodeURIComponent(slug)}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          if (res.status === 404) throw new Error('Product not found');
+          throw new Error(`Failed to load product (${res.status})`);
+        }
+        const data = await res.json();
+        if (!cancelled) {
+          setProduct(toPrintifyFormat(data));
+          setVisibility(data.product?.visibility ?? 'public');
+          setError(null);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setProduct(null);
+          setError(err instanceof Error ? err.message : 'Product not found');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [slug]);
+
+  return { product, visibility, loading, error };
+}

@@ -144,6 +144,12 @@ export interface PrintifyProduct {
   tags: string[];
   mockupImages: PrintifyMockupImage[];
   variants: PrintifyVariant[];
+  /** 'printify' or 'manual' — controls URL routing */
+  _source?: 'printify' | 'manual';
+  /** For manual products, the slug used in the URL */
+  _slug?: string;
+  /** Visibility for noindex metadata */
+  _visibility?: 'public' | 'unlisted';
 }
 
 export interface PrintifyProductsResponse {
@@ -161,6 +167,64 @@ export interface CartItem {
   priceCents: number;
   imageUrl: string | null;
   quantity: number;
+}
+
+export type ProductSource = 'printify' | 'manual';
+export type ProductVisibility = 'public' | 'unlisted' | 'draft' | 'archived';
+
+export interface UnifiedProductImage {
+  id: string;
+  src: string;
+  alt: string | null;
+  position: number;
+}
+
+export interface UnifiedProductVariant {
+  id: string;
+  productId: string;
+  printifyVariantId: number | null;
+  sku: string | null;
+  title: string;
+  options: Record<string, string>;
+  priceCents: number;
+  position: number;
+  isEnabled: boolean;
+  inventoryQuantity: number;
+}
+
+export interface UnifiedProduct {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  source: ProductSource;
+  printifyProductId: number | null;
+  basePriceCents: number;
+  currency: string;
+  sku: string | null;
+  category: string | null;
+  tags: string[];
+  shippingClass: string;
+  visibility: ProductVisibility;
+  trackInventory: boolean;
+  allowBackorders: boolean;
+  isPublished: boolean;
+  images: UnifiedProductImage[];
+  variants: UnifiedProductVariant[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminProductListItem {
+  id: string;
+  slug: string;
+  title: string;
+  source: ProductSource;
+  basePriceCents: number;
+  visibility: ProductVisibility;
+  primaryImageSrc: string | null;
+  inventoryStatus: 'in_stock' | 'out_of_stock' | 'not_tracked' | 'backorder';
+  updatedAt: string;
 }
 
 export interface MixcloudTag {
