@@ -63,7 +63,7 @@ async function fetchPrintifyProducts(): Promise<PrintifyProductListItem[]> {
   return [];
 }
 
-async function fetchPrintifyProduct(productId: number): Promise<PrintifyProductDetail> {
+async function fetchPrintifyProduct(productId: string): Promise<PrintifyProductDetail> {
   const url = `${PRINTIFY_API_BASE}/shops/${PRINTIFY_SHOP_ID}/products/${productId}.json`;
   const response = await fetch(url, { headers: authHeaders() });
 
@@ -82,7 +82,7 @@ async function fetchPrintifyProduct(productId: number): Promise<PrintifyProductD
  * and check is_visible — if the product is visible in our storefront listing,
  * we consider the page working.
  */
-async function hasWorkingStorefrontPage(productId: number): Promise<boolean> {
+async function hasWorkingStorefrontPage(productId: string): Promise<boolean> {
   try {
     const detail = await fetchPrintifyProduct(productId);
     const isVisible = detail.is_visible ?? detail.visible ?? false;
@@ -92,7 +92,7 @@ async function hasWorkingStorefrontPage(productId: number): Promise<boolean> {
   }
 }
 
-async function publishSucceeded(productId: number, siteUrl: string): Promise<{ status: number; body: string }> {
+async function publishSucceeded(productId: string, siteUrl: string): Promise<{ status: number; body: string }> {
   const url = `${PRINTIFY_API_BASE}/shops/${PRINTIFY_SHOP_ID}/products/${productId}/publishing_succeeded.json`;
   const body = JSON.stringify({
     external: {
@@ -111,7 +111,7 @@ async function publishSucceeded(productId: number, siteUrl: string): Promise<{ s
   return { status: response.status, body: responseBody };
 }
 
-async function publishFailed(productId: number): Promise<{ status: number; body: string }> {
+async function publishFailed(productId: string): Promise<{ status: number; body: string }> {
   const url = `${PRINTIFY_API_BASE}/shops/${PRINTIFY_SHOP_ID}/products/${productId}/publishing_failed.json`;
   const body = JSON.stringify({
     reason: "Custom storefront publishing integration was not configured",
@@ -168,14 +168,16 @@ Deno.serve(async (req: Request) => {
     // POST: process a single product (requires explicit action per product)
     if (req.method === "POST") {
       const body = await req.json();
-      const { productId, action } = body as { productId?: number; action?: string };
+      const { productId, action } = body as { productId?: string | number; action?: string };
 
-      if (!productId || typeof productId !== "number") {
+      if (productId === undefined || productId === null) {
         return new Response(
-          JSON.stringify({ error: "productId (number) is required" }),
+          JSON.stringify({ error: "productId is required" }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+
+      const productIdStr = String(productId);
 
       if (action !== "succeeded" && action !== "failed") {
         return new Response(
@@ -185,10 +187,10 @@ Deno.serve(async (req: Request) => {
       }
 
       // Verify the product is actually locked before taking action
-      const detail = await fetchPrintifyProduct(productId);
+      const detail = await fetchPrintifyProduct(productIdStr);
       if (!detail.is_locked) {
         return new Response(
-          JSON.stringify({ error: `Product ${productId} is not locked — no action needed` }),
+          JSON.stringify({ error: `Product ${productIdStr} is not locked — no action needed` }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -197,24 +199,24 @@ Deno.serve(async (req: Request) => {
 
       if (action === "succeeded") {
         // Verify a working storefront page exists before claiming success
-        const hasPage = await hasWorkingStorefrontPage(productId);
+        const hasPage = await hasWorkingStorefrontPage(productIdStr);
         if (!hasPage) {
           return new Response(
             JSON.stringify({
-              error: `Cannot confirm publishing succeeded: product ${productId} does not have a working storefront page at /shop/${productId}`,
+              error: `Cannot confirm publishing succeeded: product ${productIdStr} does not have a working storefront page at /shop/${productIdStr}`,
             }),
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
-        result = await publishSucceeded(productId, siteUrl);
+        result = await publishSucceeded(productIdStr, siteUrl);
       } else {
-        result = await publishFailed(productId);
+        result = await publishFailed(productIdStr);
       }
 
       return new Response(
         JSON.stringify({
-          productId,
+          productId: productIdStr,
           action,
           status: result.status,
           response: result.body,

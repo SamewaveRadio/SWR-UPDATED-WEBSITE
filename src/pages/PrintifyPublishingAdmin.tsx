@@ -102,8 +102,9 @@ export default function PrintifyPublishingAdmin() {
     }
   }, [authed, fetchLockedProducts]);
 
-  const processProduct = async (productId: number, action: 'succeeded' | 'failed') => {
-    setProcessing((prev) => ({ ...prev, [productId]: true }));
+  const processProduct = async (productId: number | string, action: 'succeeded' | 'failed') => {
+    const productIdStr = String(productId);
+    setProcessing((prev) => ({ ...prev, [productIdStr]: true }));
     setError(null);
 
     try {
@@ -115,7 +116,7 @@ export default function PrintifyPublishingAdmin() {
             Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ productId, action }),
+          body: JSON.stringify({ productId: productIdStr, action }),
         }
       );
 
@@ -124,8 +125,8 @@ export default function PrintifyPublishingAdmin() {
       if (!response.ok) {
         setResults((prev) => ({
           ...prev,
-          [productId]: {
-            productId,
+          [productIdStr]: {
+            productId: productIdStr,
             action,
             status: response.status,
             response: data.error || 'Unknown error',
@@ -134,8 +135,8 @@ export default function PrintifyPublishingAdmin() {
       } else {
         setResults((prev) => ({
           ...prev,
-          [productId]: {
-            productId,
+          [productIdStr]: {
+            productId: productIdStr,
             action: data.action,
             status: data.status,
             response: data.response,
@@ -145,15 +146,15 @@ export default function PrintifyPublishingAdmin() {
     } catch (err) {
       setResults((prev) => ({
         ...prev,
-        [productId]: {
-          productId,
+        [productIdStr]: {
+          productId: productIdStr,
           action,
           status: 0,
           response: err instanceof Error ? err.message : 'Network error',
         },
       }));
     } finally {
-      setProcessing((prev) => ({ ...prev, [productId]: false }));
+      setProcessing((prev) => ({ ...prev, [productIdStr]: false }));
     }
   };
 
@@ -249,8 +250,9 @@ export default function PrintifyPublishingAdmin() {
         ) : (
           <div className="space-y-4">
             {products.map((product) => {
-              const result = results[product.id];
-              const isProcessing = processing[product.id] ?? false;
+              const productIdKey = String(product.id);
+              const result = results[productIdKey];
+              const isProcessing = processing[productIdKey] ?? false;
 
               return (
                 <div
@@ -296,7 +298,7 @@ export default function PrintifyPublishingAdmin() {
 
                   <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                     <button
-                      onClick={() => processProduct(product.id, 'succeeded')}
+                      onClick={() => processProduct(String(product.id), 'succeeded')}
                       disabled={isProcessing || !product.hasStorefrontPage}
                       className="flex items-center justify-center gap-2 px-4 py-2.5 border border-white/20 hover:border-white/40 hover:bg-white/5 text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed rounded"
                     >
@@ -304,7 +306,7 @@ export default function PrintifyPublishingAdmin() {
                       Confirm published
                     </button>
                     <button
-                      onClick={() => processProduct(product.id, 'failed')}
+                      onClick={() => processProduct(String(product.id), 'failed')}
                       disabled={isProcessing}
                       className="flex items-center justify-center gap-2 px-4 py-2.5 border border-red-500/20 hover:border-red-500/40 hover:bg-red-500/5 text-sm text-red-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed rounded"
                     >
