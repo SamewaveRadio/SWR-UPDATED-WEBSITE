@@ -120,76 +120,47 @@ export type RadioCoHistoryItem = AzuraCastHistoryItem;
 export type RadioCoHistory = AzuraCastHistory;
 export type RadioCoStatus = AzuraCastStatus;
 
-export interface ShopifyProduct {
-  id: string;
-  handle: string;
+export interface PrintifyMockupImage {
+  id: number;
+  src: string;
+  position: string;
+  default: boolean;
+}
+
+export interface PrintifyVariant {
+  variantId: number;
+  sku: string;
   title: string;
-  imageUrl: string | null;
-  imageAlt: string;
-  price: number;
-  compareAtPrice: number | null;
-  currencyCode: string;
-  availableForSale: boolean;
+  color: string | null;
+  size: string | null;
+  price: string;
+  priceCents: number;
 }
 
-export interface ShopifyProductsResponse {
-  items: ShopifyProduct[];
-  pageInfo: {
-    hasNextPage: boolean;
-    endCursor: string | null;
-  };
-}
-
-export interface ShopifyProductImage {
-  url: string;
-  altText: string;
-}
-
-export interface ShopifyProductOption {
-  id: string;
-  name: string;
-  values: string[];
-}
-
-export interface ShopifyProductVariant {
-  id: string;
+export interface PrintifyProduct {
+  id: number;
   title: string;
-  price: number;
-  compareAtPrice: number | null;
-  currencyCode: string;
-  availableForSale: boolean;
-  selectedOptions: { name: string; value: string }[];
+  description: string;
+  tags: string[];
+  mockupImages: PrintifyMockupImage[];
+  variants: PrintifyVariant[];
 }
 
-export interface ShopifyProductDetail {
-  id: string;
-  handle: string;
+export interface PrintifyProductsResponse {
+  items: PrintifyProduct[];
+}
+
+export interface CartItem {
+  productId: number;
+  variantId: number;
   title: string;
-  descriptionHtml: string;
-  images: ShopifyProductImage[];
-  options: ShopifyProductOption[];
-  variants: ShopifyProductVariant[];
-}
-
-export interface ShopifyCartLine {
-  lineId: string;
-  quantity: number;
-  variantId: string;
   variantTitle: string;
-  productTitle: string;
-  productHandle: string;
-  price: number;
-  currencyCode: string;
+  color: string | null;
+  size: string | null;
+  price: string;
+  priceCents: number;
   imageUrl: string | null;
-}
-
-export interface ShopifyCart {
-  cartId: string;
-  checkoutUrl: string;
-  totalQuantity: number;
-  subtotal: number;
-  currencyCode: string;
-  lines: ShopifyCartLine[];
+  quantity: number;
 }
 
 export interface MixcloudTag {

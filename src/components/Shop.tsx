@@ -1,45 +1,22 @@
 import { Link } from 'react-router-dom';
 import { ShoppingBag, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState } from 'react';
-import { useProducts } from '../hooks/useShopify';
-import { useCartContext } from '../contexts/CartContext';
-import { ShopifyProduct } from '../types';
+import { useProducts } from '../hooks/usePrintify';
+import { PrintifyProduct } from '../types';
 
-function formatPrice(price: number, currencyCode: string) {
-  return new Intl.NumberFormat('en-GB', {
-    style: 'currency',
-    currency: currencyCode,
-  }).format(price);
-}
-
-function ProductCard({ product }: { product: ShopifyProduct }) {
-  const { addToCart, loading } = useCartContext();
-  const [adding, setAdding] = useState(false);
-
-  const handleAddToCart = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!product.availableForSale) return;
-
-    setAdding(true);
-    try {
-      await addToCart(product.id);
-    } catch {
-    } finally {
-      setAdding(false);
-    }
-  };
+function ProductCard({ product }: { product: PrintifyProduct }) {
+  const defaultImage = product.mockupImages[0];
 
   return (
     <Link
-      to={`/shop/${product.handle}`}
+      to={`/shop/${product.id}`}
       className="group bg-black flex flex-col hover:bg-white/5 transition-colors focus:outline-none focus:ring-2 focus:ring-white/20"
     >
       <div className="aspect-square bg-white/5 flex items-center justify-center overflow-hidden">
-        {product.imageUrl ? (
+        {defaultImage ? (
           <img
-            src={product.imageUrl}
-            alt={product.imageAlt}
+            src={defaultImage.src}
+            alt={product.title}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
         ) : (
@@ -53,30 +30,14 @@ function ProductCard({ product }: { product: ShopifyProduct }) {
         </h3>
 
         <div className="mt-auto pt-2 flex items-center justify-between gap-2">
-          <div className="flex items-baseline gap-2">
-            <span className="text-white text-sm sm:text-base font-medium">
-              {formatPrice(product.price, product.currencyCode)}
-            </span>
-            {product.compareAtPrice && (
-              <span className="text-white/40 text-xs line-through">
-                {formatPrice(product.compareAtPrice, product.currencyCode)}
-              </span>
-            )}
-          </div>
+          <span className="text-white text-sm sm:text-base font-medium">
+            {product.variants[0]?.price ?? '—'}
+          </span>
 
-          {!product.availableForSale ? (
+          {product.variants.length > 1 && (
             <span className="text-white/40 text-[10px] sm:text-xs uppercase tracking-wide">
-              Sold out
+              {product.variants.length} options
             </span>
-          ) : (
-            <button
-              onClick={handleAddToCart}
-              disabled={loading || adding}
-              className="p-1.5 sm:p-2 bg-white/10 hover:bg-white/20 text-white rounded transition-colors disabled:opacity-50"
-              aria-label="Add to cart"
-            >
-              <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            </button>
           )}
         </div>
       </div>
@@ -97,7 +58,7 @@ function ProductSkeleton() {
 }
 
 export function Shop() {
-  const { products, loading, error, hasMore, loadMore } = useProducts(8);
+  const { products, loading, error } = useProducts();
   const [isExpanded, setIsExpanded] = useState(false);
 
   const displayedProducts = isExpanded ? products : products.slice(0, 4);
@@ -150,15 +111,10 @@ export function Shop() {
               ))}
             </div>
 
-            {(products.length > 4 || hasMore) && (
+            {products.length > 4 && (
               <div className="mt-6 sm:mt-8 text-center">
                 <button
-                  onClick={() => {
-                    if (!isExpanded && hasMore) {
-                      loadMore();
-                    }
-                    setIsExpanded(!isExpanded);
-                  }}
+                  onClick={() => setIsExpanded(!isExpanded)}
                   className="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-white/5 text-white text-xs sm:text-sm tracking-wide hover:bg-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-white/20 rounded"
                 >
                   {isExpanded ? (

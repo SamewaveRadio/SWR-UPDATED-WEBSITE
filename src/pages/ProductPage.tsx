@@ -1,29 +1,50 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Minus, Plus, ShoppingBag, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useProduct } from '../hooks/useShopify';
+import { useProduct } from '../hooks/usePrintify';
 import { useCartContext } from '../contexts/CartContext';
 import { Navigation } from '../components/Navigation';
-import { ShopifyProductVariant } from '../types';
-
-function formatPrice(price: number, currencyCode: string) {
-  return new Intl.NumberFormat('en-GB', {
-    style: 'currency',
-    currency: currencyCode,
-  }).format(price);
-}
+import { sanitizeHtml } from '../lib/sanitize';
 
 export function ProductPage() {
-  const { handle } = useParams<{ handle: string }>();
-  const { product, loading, error } = useProduct(handle);
+  const { productId } = useParams<{ productId: string }>();
+  const { product, loading, error } = useProduct(productId);
   const { addToCart, loading: cartLoading } = useCartContext();
 
-  const [selectedVariant, setSelectedVariant] = useState<ShopifyProductVariant | null>(null);
+  const [selectedColor, setSelectedColor] = useState<string | null>(null);
+  const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [adding, setAdding] = useState(false);
 
-  const activeVariant = selectedVariant || product?.variants[0];
+  const colors = useMemo(() => {
+    if (!product) return [];
+    const set = new Set<string>();
+    product.variants.forEach((v) => {
+      if (v.color) set.add(v.color);
+    });
+    return Array.from(set);
+  }, [product]);
+
+  const sizes = useMemo(() => {
+    if (!product) return [];
+    const set = new Set<string>();
+    product.variants.forEach((v) => {
+      if (v.size) set.add(v.size);
+    });
+    return Array.from(set);
+  }, [product]);
+
+  const activeVariant = useMemo(() => {
+    if (!product || product.variants.length === 0) return null;
+    return (
+      product.variants.find(
+        (v) =>
+          (selectedColor ? v.color === selectedColor : true) &&
+          (selectedSize ? v.size === selectedSize : true)
+      ) ?? product.variants[0]
+    );
+  }, [product, selectedColor, selectedSize]);
 
   useEffect(() => {
     if (product) {
@@ -34,29 +55,45 @@ export function ProductPage() {
     };
   }, [product]);
 
+  useEffect(() => {
+    setCurrentImageIndex(0);
+  }, [productId]);
+
   const handleAddToCart = async () => {
-    if (!activeVariant || !activeVariant.availableForSale) return;
+    if (!activeVariant || !product) return;
 
     setAdding(true);
     try {
-      for (let i = 0; i < quantity; i++) {
-        await addToCart(activeVariant.id);
-      }
-    } catch {
+      addToCart(
+        {
+          productId: product.id,
+          variantId: activeVariant.variantId,
+          title: product.title,
+          variantTitle: activeVariant.title,
+          color: activeVariant.color,
+          size: activeVariant.size,
+          price: activeVariant.price,
+          priceCents: activeVariant.priceCents,
+          imageUrl: product.mockupImages[0]?.src ?? null,
+        },
+        quantity
+      );
     } finally {
       setAdding(false);
     }
   };
 
   const nextImage = () => {
-    if (product && product.images.length > 1) {
-      setCurrentImageIndex((prev) => (prev + 1) % product.images.length);
+    if (product && product.mockupImages.length > 1) {
+      setCurrentImageIndex((prev) => (prev + 1) % product.mockupImages.length);
     }
   };
 
   const prevImage = () => {
-    if (product && product.images.length > 1) {
-      setCurrentImageIndex((prev) => (prev - 1 + product.images.length) % product.images.length);
+    if (product && product.mockupImages.length > 1) {
+      setCurrentImageIndex(
+        (prev) => (prev - 1 + product.mockupImages.length) % product.mockupImages.length
+      );
     }
   };
 
@@ -107,197 +144,215 @@ export function ProductPage() {
     );
   }
 
-  const hasMultipleImages = product.images.length > 1;
-  const hasOptions = product.options.length > 0 && product.options[0].name !== 'Title';
+  const hasMultipleImages = product.mockupImages.length > 1;
+  const sanitizedDescription = product.description ? sanitizeHtml(product.description) : '';
 
   return (
     <div className="min-h-screen bg-black pb-32 sm:pb-36">
       <Navigation />
       <div className="pt-20 sm:pt-24 px-4 sm:px-6">
         <div className="max-w-6xl mx-auto">
-        <Link
-          to="/shop"
-          className="inline-flex items-center gap-2 text-white/60 hover:text-white text-sm mb-6 sm:mb-8 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Shop
-        </Link>
+          <Link
+            to="/shop"
+            className="inline-flex items-center gap-2 text-white/60 hover:text-white text-sm mb-6 sm:mb-8 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Shop
+          </Link>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-12">
-          <div className="relative">
-            <div className="aspect-square bg-white/5 rounded overflow-hidden">
-              {product.images.length > 0 ? (
-                <img
-                  src={product.images[currentImageIndex].url}
-                  alt={product.images[currentImageIndex].altText}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <ShoppingBag className="w-16 h-16 text-white/20" />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-12">
+            <div className="relative">
+              <div className="aspect-square bg-white/5 rounded overflow-hidden">
+                {product.mockupImages.length > 0 ? (
+                  <img
+                    src={product.mockupImages[currentImageIndex].src}
+                    alt={product.title}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <ShoppingBag className="w-16 h-16 text-white/20" />
+                  </div>
+                )}
+              </div>
+
+              {hasMultipleImages && (
+                <>
+                  <button
+                    onClick={prevImage}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors"
+                    aria-label="Previous image"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={nextImage}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors"
+                    aria-label="Next image"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+                    {product.mockupImages.map((_, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setCurrentImageIndex(idx)}
+                        className={`w-2 h-2 rounded-full transition-colors ${
+                          idx === currentImageIndex ? 'bg-white' : 'bg-white/40'
+                        }`}
+                        aria-label={`View image ${idx + 1}`}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {hasMultipleImages && (
+                <div className="mt-4 grid grid-cols-5 gap-2">
+                  {product.mockupImages.slice(0, 5).map((image, idx) => (
+                    <button
+                      key={image.id}
+                      onClick={() => setCurrentImageIndex(idx)}
+                      className={`aspect-square rounded overflow-hidden border-2 transition-colors ${
+                        idx === currentImageIndex
+                          ? 'border-white'
+                          : 'border-transparent hover:border-white/40'
+                      }`}
+                    >
+                      <img
+                        src={image.src}
+                        alt={product.title}
+                        className="w-full h-full object-cover"
+                      />
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
 
-            {hasMultipleImages && (
-              <>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-light text-white mb-3">
+                {product.title}
+              </h1>
+
+              {activeVariant && (
+                <div className="flex items-baseline gap-3 mb-6">
+                  <span className="text-xl sm:text-2xl text-white font-medium">
+                    {activeVariant.price}
+                  </span>
+                </div>
+              )}
+
+              {colors.length > 0 && (
+                <div className="mb-6">
+                  <label className="block text-white/60 text-sm mb-2">
+                    Color
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {colors.map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => setSelectedColor(color)}
+                        className={`px-4 py-2 text-sm border transition-colors ${
+                          selectedColor === color
+                            ? 'border-white bg-white text-black'
+                            : 'border-white/20 text-white hover:border-white/40'
+                        }`}
+                      >
+                        {color}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {sizes.length > 0 && (
+                <div className="mb-6">
+                  <label className="block text-white/60 text-sm mb-2">
+                    Size
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {sizes.map((size) => {
+                      const variantAvailable = product.variants.some(
+                        (v) =>
+                          v.size === size &&
+                          (selectedColor ? v.color === selectedColor : true)
+                      );
+                      return (
+                        <button
+                          key={size}
+                          onClick={() => setSelectedSize(size)}
+                          disabled={!variantAvailable}
+                          className={`px-4 py-2 text-sm border transition-colors ${
+                            selectedSize === size
+                              ? 'border-white bg-white text-black'
+                              : variantAvailable
+                              ? 'border-white/20 text-white hover:border-white/40'
+                              : 'border-white/10 text-white/30 cursor-not-allowed'
+                          }`}
+                        >
+                          {size}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-4 mb-6">
+                <div className="flex items-center border border-white/20">
+                  <button
+                    onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                    className="p-3 text-white hover:bg-white/10 transition-colors"
+                    aria-label="Decrease quantity"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <span className="w-12 text-center text-white">{quantity}</span>
+                  <button
+                    onClick={() => setQuantity((q) => q + 1)}
+                    className="p-3 text-white hover:bg-white/10 transition-colors"
+                    aria-label="Increase quantity"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+
                 <button
-                  onClick={prevImage}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors"
-                  aria-label="Previous image"
+                  onClick={handleAddToCart}
+                  disabled={!activeVariant || cartLoading || adding}
+                  className="flex-1 py-3 px-6 bg-white text-black font-medium text-sm tracking-wide hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <ChevronLeft className="w-5 h-5" />
+                  {adding ? 'ADDING...' : 'ADD TO CART'}
                 </button>
-                <button
-                  onClick={nextImage}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors"
-                  aria-label="Next image"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-                  {product.images.map((_, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => setCurrentImageIndex(idx)}
-                      className={`w-2 h-2 rounded-full transition-colors ${
-                        idx === currentImageIndex ? 'bg-white' : 'bg-white/40'
-                      }`}
-                      aria-label={`View image ${idx + 1}`}
-                    />
+              </div>
+
+              {sanitizedDescription && (
+                <div className="border-t border-white/10 pt-6">
+                  <h3 className="text-white/60 text-sm mb-3 uppercase tracking-wide">
+                    Description
+                  </h3>
+                  <div
+                    className="text-white/80 text-sm leading-relaxed prose prose-invert prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ __html: sanitizedDescription }}
+                  />
+                </div>
+              )}
+
+              {product.tags.length > 0 && (
+                <div className="mt-6 flex flex-wrap gap-2">
+                  {product.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="px-3 py-1 text-xs text-white/50 border border-white/10 rounded"
+                    >
+                      {tag}
+                    </span>
                   ))}
                 </div>
-              </>
-            )}
-
-            {product.images.length > 1 && (
-              <div className="mt-4 grid grid-cols-5 gap-2">
-                {product.images.slice(0, 5).map((image, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setCurrentImageIndex(idx)}
-                    className={`aspect-square rounded overflow-hidden border-2 transition-colors ${
-                      idx === currentImageIndex
-                        ? 'border-white'
-                        : 'border-transparent hover:border-white/40'
-                    }`}
-                  >
-                    <img
-                      src={image.url}
-                      alt={image.altText}
-                      className="w-full h-full object-cover"
-                    />
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-light text-white mb-3">
-              {product.title}
-            </h1>
-
-            {activeVariant && (
-              <div className="flex items-baseline gap-3 mb-6">
-                <span className="text-xl sm:text-2xl text-white font-medium">
-                  {formatPrice(activeVariant.price, activeVariant.currencyCode)}
-                </span>
-                {activeVariant.compareAtPrice && (
-                  <span className="text-white/40 line-through">
-                    {formatPrice(activeVariant.compareAtPrice, activeVariant.currencyCode)}
-                  </span>
-                )}
-              </div>
-            )}
-
-            {hasOptions && (
-              <div className="mb-6 space-y-4">
-                {product.options.map((option) => (
-                  <div key={option.id}>
-                    <label className="block text-white/60 text-sm mb-2">
-                      {option.name}
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {option.values.map((value) => {
-                        const variant = product.variants.find((v) =>
-                          v.selectedOptions.some(
-                            (opt) => opt.name === option.name && opt.value === value
-                          )
-                        );
-                        const isSelected = activeVariant?.selectedOptions.some(
-                          (opt) => opt.name === option.name && opt.value === value
-                        );
-                        const isAvailable = variant?.availableForSale ?? false;
-
-                        return (
-                          <button
-                            key={value}
-                            onClick={() => variant && setSelectedVariant(variant)}
-                            disabled={!isAvailable}
-                            className={`px-4 py-2 text-sm border transition-colors ${
-                              isSelected
-                                ? 'border-white bg-white text-black'
-                                : isAvailable
-                                ? 'border-white/20 text-white hover:border-white/40'
-                                : 'border-white/10 text-white/30 cursor-not-allowed'
-                            }`}
-                          >
-                            {value}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="flex items-center gap-4 mb-6">
-              <div className="flex items-center border border-white/20">
-                <button
-                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                  className="p-3 text-white hover:bg-white/10 transition-colors"
-                  aria-label="Decrease quantity"
-                >
-                  <Minus className="w-4 h-4" />
-                </button>
-                <span className="w-12 text-center text-white">{quantity}</span>
-                <button
-                  onClick={() => setQuantity((q) => q + 1)}
-                  className="p-3 text-white hover:bg-white/10 transition-colors"
-                  aria-label="Increase quantity"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
-
-              <button
-                onClick={handleAddToCart}
-                disabled={!activeVariant?.availableForSale || cartLoading || adding}
-                className="flex-1 py-3 px-6 bg-white text-black font-medium text-sm tracking-wide hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {!activeVariant?.availableForSale
-                  ? 'SOLD OUT'
-                  : adding
-                  ? 'ADDING...'
-                  : 'ADD TO CART'}
-              </button>
+              )}
             </div>
-
-            {product.descriptionHtml && (
-              <div className="border-t border-white/10 pt-6">
-                <h3 className="text-white/60 text-sm mb-3 uppercase tracking-wide">
-                  Description
-                </h3>
-                <div
-                  className="text-white/80 text-sm leading-relaxed prose prose-invert prose-sm max-w-none"
-                  dangerouslySetInnerHTML={{ __html: product.descriptionHtml }}
-                />
-              </div>
-            )}
           </div>
-        </div>
         </div>
       </div>
     </div>

@@ -24,7 +24,7 @@ function App() {
               <Route path="/archive" element={<ExplorePage />} />
               <Route path="/residents/:slug" element={<ResidentProfile />} />
               <Route path="/shop" element={<ShopPage />} />
-              <Route path="/shop/:handle" element={<ProductPage />} />
+              <Route path="/shop/:productId" element={<ProductPage />} />
               <Route path="/admin" element={<AdminPage />} />
             </Routes>
             <AudioPlayer />

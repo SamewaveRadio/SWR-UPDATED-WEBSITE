@@ -8,15 +8,8 @@ interface CartDrawerProps {
   onClose: () => void;
 }
 
-function formatPrice(price: number, currencyCode: string) {
-  return new Intl.NumberFormat('en-GB', {
-    style: 'currency',
-    currency: currencyCode,
-  }).format(price);
-}
-
 export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
-  const { cart, loading, updateQuantity, removeFromCart, checkout } = useCartContext();
+  const { items, loading, updateQuantity, removeFromCart } = useCartContext();
   const drawerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,13 +34,11 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     }
   }, [isOpen]);
 
-  const handleQuantityChange = async (lineId: string, newQuantity: number) => {
-    if (newQuantity < 1) {
-      await removeFromCart(lineId);
-    } else {
-      await updateQuantity(lineId, newQuantity);
-    }
-  };
+  const subtotalCents = items.reduce((sum, i) => sum + i.priceCents * i.quantity, 0);
+  const subtotal = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  }).format(subtotalCents / 100);
 
   return (
     <>
@@ -83,11 +74,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
             </button>
           </div>
 
-          {loading && !cart ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-white/40 text-sm">Loading...</div>
-            </div>
-          ) : !cart || cart.lines.length === 0 ? (
+          {items.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
               <ShoppingBag className="w-12 h-12 text-white/20 mb-4" />
               <p className="text-white/60 text-sm mb-4">Your cart is empty</p>
@@ -102,20 +89,20 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
             <>
               <div className="flex-1 overflow-y-auto p-4 sm:p-6">
                 <div className="space-y-4">
-                  {cart.lines.map((line) => (
+                  {items.map((line) => (
                     <div
-                      key={line.lineId}
+                      key={`${line.productId}-${line.variantId}`}
                       className="flex gap-3 sm:gap-4 pb-4 border-b border-white/10"
                     >
                       <Link
-                        to={`/shop/${line.productHandle}`}
+                        to={`/shop/${line.productId}`}
                         onClick={onClose}
                         className="w-16 h-16 sm:w-20 sm:h-20 bg-white/5 rounded overflow-hidden flex-shrink-0"
                       >
                         {line.imageUrl ? (
                           <img
                             src={line.imageUrl}
-                            alt={line.productTitle}
+                            alt={line.title}
                             className="w-full h-full object-cover"
                           />
                         ) : (
@@ -127,26 +114,24 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
 
                       <div className="flex-1 min-w-0">
                         <Link
-                          to={`/shop/${line.productHandle}`}
+                          to={`/shop/${line.productId}`}
                           onClick={onClose}
                           className="text-white text-sm font-medium hover:text-white/80 transition-colors line-clamp-1"
                         >
-                          {line.productTitle}
+                          {line.title}
                         </Link>
-                        {line.variantTitle !== 'Default Title' && (
+                        {(line.color || line.size) && (
                           <p className="text-white/40 text-xs mt-0.5">
-                            {line.variantTitle}
+                            {[line.color, line.size].filter(Boolean).join(' / ')}
                           </p>
                         )}
-                        <p className="text-white/80 text-sm mt-1">
-                          {formatPrice(line.price, line.currencyCode)}
-                        </p>
+                        <p className="text-white/80 text-sm mt-1">{line.price}</p>
 
                         <div className="flex items-center justify-between mt-2">
                           <div className="flex items-center border border-white/20">
                             <button
                               onClick={() =>
-                                handleQuantityChange(line.lineId, line.quantity - 1)
+                                updateQuantity(line.productId, line.variantId, line.quantity - 1)
                               }
                               disabled={loading}
                               className="p-1.5 text-white hover:bg-white/10 transition-colors disabled:opacity-50"
@@ -159,7 +144,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                             </span>
                             <button
                               onClick={() =>
-                                handleQuantityChange(line.lineId, line.quantity + 1)
+                                updateQuantity(line.productId, line.variantId, line.quantity + 1)
                               }
                               disabled={loading}
                               className="p-1.5 text-white hover:bg-white/10 transition-colors disabled:opacity-50"
@@ -170,7 +155,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                           </div>
 
                           <button
-                            onClick={() => removeFromCart(line.lineId)}
+                            onClick={() => removeFromCart(line.productId, line.variantId)}
                             disabled={loading}
                             className="p-1.5 text-white/40 hover:text-white transition-colors disabled:opacity-50"
                             aria-label="Remove item"
@@ -187,19 +172,16 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
               <div className="border-t border-white/10 p-4 sm:p-6 space-y-4">
                 <div className="flex items-center justify-between text-white">
                   <span className="text-sm">Subtotal</span>
-                  <span className="text-lg font-medium">
-                    {formatPrice(cart.subtotal, cart.currencyCode)}
-                  </span>
+                  <span className="text-lg font-medium">{subtotal}</span>
                 </div>
                 <p className="text-white/40 text-xs">
                   Shipping and taxes calculated at checkout
                 </p>
                 <button
-                  onClick={checkout}
-                  disabled={loading}
-                  className="w-full py-3 bg-white text-black font-medium text-sm tracking-wide hover:bg-white/90 transition-colors disabled:opacity-50"
+                  disabled
+                  className="w-full py-3 bg-white/10 text-white/50 font-medium text-sm tracking-wide cursor-not-allowed rounded"
                 >
-                  CHECKOUT
+                  Checkout coming next
                 </button>
               </div>
             </>

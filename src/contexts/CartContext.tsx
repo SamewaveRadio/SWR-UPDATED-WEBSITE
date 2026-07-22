@@ -1,18 +1,18 @@
 import { createContext, useContext, ReactNode } from 'react';
-import { useCart } from '../hooks/useShopify';
-import { ShopifyCart } from '../types';
+import { useCart } from '../hooks/usePrintify';
+import { CartItem } from '../types';
 
 interface CartContextType {
-  cart: ShopifyCart | null;
+  items: CartItem[];
   loading: boolean;
   error: string | null;
-  addToCart: (variantId: string, quantity?: number) => Promise<void>;
-  updateQuantity: (lineId: string, quantity: number) => Promise<void>;
-  removeFromCart: (lineId: string) => Promise<void>;
-  checkout: () => void;
+  addToCart: (item: Omit<CartItem, 'quantity'>, quantity?: number) => void;
+  updateQuantity: (productId: number, variantId: number, quantity: number) => void;
+  removeFromCart: (productId: number, variantId: number) => void;
   clearCart: () => void;
-  refetch: () => Promise<void>;
+  refetch: () => void;
   totalQuantity: number;
+  subtotalCents: number;
 }
 
 const CartContext = createContext<CartContextType | null>(null);

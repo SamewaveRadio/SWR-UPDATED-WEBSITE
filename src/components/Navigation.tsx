@@ -159,7 +159,7 @@ export function Navigation() {
     { id: 'explore', label: 'ARCHIVE', type: 'route', path: '/archive' },
     { id: 'schedule', label: 'SCHEDULE', type: 'section' },
     { id: 'residents', label: 'RESIDENTS', type: 'section' },
-    { id: 'shop', label: 'SHOP', type: 'section' },
+    { id: 'shop', label: 'SHOP', type: 'route', path: '/shop' },
     { id: 'submit', label: 'SUBMIT', type: 'dropdown' },
     { id: 'about', label: 'ABOUT', type: 'section' },
   ];
