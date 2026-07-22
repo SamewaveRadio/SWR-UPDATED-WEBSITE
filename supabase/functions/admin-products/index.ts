@@ -23,6 +23,7 @@ interface ImageInput {
   src: string;
   alt?: string;
   position?: number;
+  r2Key?: string | null;
 }
 
 interface ProductInput {
@@ -294,6 +295,7 @@ Deno.serve(async (req: Request) => {
           src: img.src,
           alt: img.alt ?? null,
           position: img.position ?? i,
+          r2_key: img.r2Key ?? null,
         }));
 
         const { error: imgError } = await supabase
@@ -391,8 +393,18 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // Sync images: replace all
+      // Sync images: replace all (preserving r2_key for R2-managed images)
       if (body.images !== undefined) {
+        // Fetch existing images so we can delete orphaned R2 objects
+        const { data: existingImages } = await supabase
+          .from("product_images")
+          .select("id, r2_key")
+          .eq("product_id", body.id);
+
+        const existingR2Keys = new Map(
+          (existingImages ?? []).filter(img => img.r2_key).map(img => [img.id, img.r2_key]),
+        );
+
         await supabase.from("product_images").delete().eq("product_id", body.id);
         if (body.images.length > 0) {
           const imageRows = body.images.map((img, i) => ({
@@ -400,6 +412,7 @@ Deno.serve(async (req: Request) => {
             src: img.src,
             alt: img.alt ?? null,
             position: img.position ?? i,
+            r2_key: img.r2Key ?? null,
           }));
           await supabase.from("product_images").insert(imageRows);
         }

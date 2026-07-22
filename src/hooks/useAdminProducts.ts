@@ -31,6 +31,15 @@ async function adminFetch(path: string, options: RequestInit = {}): Promise<Resp
   return response;
 }
 
+export interface AdminProductImage {
+  id: string;
+  product_id: string;
+  src: string;
+  alt: string | null;
+  position: number;
+  r2_key: string | null;
+}
+
 export interface AdminProductDetail {
   product: {
     id: string;
@@ -61,13 +70,7 @@ export interface AdminProductDetail {
     position: number;
     is_enabled: boolean;
   }>;
-  images: Array<{
-    id: string;
-    product_id: string;
-    src: string;
-    alt: string | null;
-    position: number;
-  }>;
+  images: AdminProductImage[];
   inventory: Record<string, number>;
 }
 

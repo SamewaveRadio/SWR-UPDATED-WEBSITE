@@ -12,6 +12,7 @@ import {
   deleteProduct,
 } from '../hooks/useAdminProducts';
 import { useAdminAuth } from '../contexts/AdminAuthContext';
+import { ImageUploader, type ProductImageRow } from './ImageUploader';
 import type { ProductVisibility, AdminProductListItem } from '../types';
 
 type FilterTab = 'all' | ProductVisibility;
@@ -61,6 +62,8 @@ interface ImageRow {
   src: string;
   alt: string;
   position: number;
+  r2Key?: string | null;
+  pending?: boolean;
 }
 
 function ProductList() {
@@ -340,6 +343,7 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
         src: img.src,
         alt: img.alt ?? '',
         position: img.position,
+        r2Key: img.r2_key,
       })));
     }
   }, [detail]);
@@ -373,18 +377,6 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
     setVariants(prev => prev.filter((_, i) => i !== index));
   };
 
-  const addImage = () => {
-    setImages(prev => [...prev, { src: '', alt: '', position: prev.length }]);
-  };
-
-  const updateImage = (index: number, field: keyof ImageRow, value: string | number) => {
-    setImages(prev => prev.map((img, i) => i === index ? { ...img, [field]: value } : img));
-  };
-
-  const removeImage = (index: number) => {
-    setImages(prev => prev.filter((_, i) => i !== index));
-  };
-
   const buildPayload = (targetVisibility: ProductVisibility) => ({
     id: productId ?? undefined,
     slug: slug.trim(),
@@ -412,6 +404,7 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
       src: img.src.trim(),
       alt: img.alt.trim() || undefined,
       position: i,
+      r2Key: img.r2Key ?? null,
     })),
   });
 
@@ -659,54 +652,18 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
         </div>
 
         {/* Images */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <label className={labelClass}>Images</label>
-            <button
-              onClick={addImage}
-              className="inline-flex items-center gap-1 text-xs text-white/60 hover:text-white transition-colors"
-            >
-              <Plus className="w-3 h-3" />
-              Add image
-            </button>
-          </div>
-          {images.length === 0 && (
-            <p className="text-white/30 text-xs">No images. Add an image URL to show a product photo.</p>
-          )}
-          <div className="space-y-2">
-            {images.map((img, i) => (
-              <div key={i} className="flex gap-2 items-center bg-white/5 p-2 rounded">
-                {img.src ? (
-                  <img src={img.src} alt={img.alt} className="w-10 h-10 object-cover rounded flex-shrink-0" />
-                ) : (
-                  <div className="w-10 h-10 bg-black/30 rounded flex items-center justify-center flex-shrink-0">
-                    <Package className="w-4 h-4 text-white/20" />
-                  </div>
-                )}
-                <input
-                  type="text"
-                  value={img.src}
-                  onChange={(e) => updateImage(i, 'src', e.target.value)}
-                  className="flex-1 px-2 py-1.5 bg-black/30 text-white text-xs rounded border border-white/10 focus:outline-none focus:border-white/30 placeholder-white/30"
-                  placeholder="Image URL"
-                />
-                <input
-                  type="text"
-                  value={img.alt}
-                  onChange={(e) => updateImage(i, 'alt', e.target.value)}
-                  className="w-32 px-2 py-1.5 bg-black/30 text-white text-xs rounded border border-white/10 focus:outline-none focus:border-white/30 placeholder-white/30"
-                  placeholder="Alt text"
-                />
-                <button
-                  onClick={() => removeImage(i)}
-                  className="p-1 text-white/30 hover:text-red-400 transition-colors"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
+        <ImageUploader
+          productId={productId}
+          images={images as ProductImageRow[]}
+          onImagesChange={(updated) => setImages(updated.map(img => ({
+            id: img.id,
+            src: img.src,
+            alt: img.alt,
+            position: img.position,
+            r2Key: img.r2Key,
+            pending: img.pending,
+          })))}
+        />
 
         {/* Unlisted Warning */}
         {visibility === 'unlisted' && (
