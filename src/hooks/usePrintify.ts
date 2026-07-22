@@ -225,7 +225,7 @@ export function useCart() {
   );
 
   const updateQuantity = useCallback(
-    (productId: number, variantId: number, quantity: number) => {
+    (productId: string | number, variantId: number, quantity: number) => {
       setLoading(true);
       try {
         setItems((prev) => {
@@ -252,7 +252,7 @@ export function useCart() {
   );
 
   const removeFromCart = useCallback(
-    (productId: number, variantId: number) => {
+    (productId: string | number, variantId: number) => {
       setLoading(true);
       try {
         setItems((prev) => {

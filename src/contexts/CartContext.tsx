@@ -7,8 +7,8 @@ interface CartContextType {
   loading: boolean;
   error: string | null;
   addToCart: (item: Omit<CartItem, 'quantity'>, quantity?: number) => void;
-  updateQuantity: (productId: number, variantId: number, quantity: number) => void;
-  removeFromCart: (productId: number, variantId: number) => void;
+  updateQuantity: (productId: string | number, variantId: number, quantity: number) => void;
+  removeFromCart: (productId: string | number, variantId: number) => void;
   clearCart: () => void;
   refetch: () => void;
   totalQuantity: number;

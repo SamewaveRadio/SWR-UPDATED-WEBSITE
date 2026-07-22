@@ -140,7 +140,7 @@ export interface PrintifyVariant {
 }
 
 export interface PrintifyProduct {
-  id: number;
+  id: string | number;
   title: string;
   description: string;
   tags: string[];
@@ -161,7 +161,7 @@ export interface PrintifyProductsResponse {
 }
 
 export interface CartItem {
-  productId: number;
+  productId: string | number;
   variantId: number;
   /** 'printify' or 'manual' — determines which backend validates the item */
   source: ProductSource;

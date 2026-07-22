@@ -36,7 +36,7 @@ function printifyAuthHeaders(): HeadersInit {
 
 interface CheckoutItemRequest {
   source: string;
-  productId: number;
+  productId: string | number;
   variantId: number;
   quantity: number;
   internalProductId: string | null;
@@ -99,7 +99,7 @@ function validateItems(items: CheckoutItemRequest[]): string | null {
   if (!items || !Array.isArray(items) || items.length === 0) return "Cart is empty";
   if (items.length > MAX_ITEMS) return `Too many items (max ${MAX_ITEMS})`;
   for (const item of items) {
-    if (!Number.isInteger(item.productId)) return "Invalid product ID";
+    if (item.productId === undefined || item.productId === null || item.productId === '') return "Invalid product ID";
     if (!Number.isInteger(item.variantId)) return "Invalid variant ID";
     if (!Number.isInteger(item.quantity) || item.quantity < 1) return "Invalid quantity";
     if (item.quantity > MAX_QUANTITY_PER_ITEM) return `Quantity too high (max ${MAX_QUANTITY_PER_ITEM})`;
@@ -113,7 +113,7 @@ function validateItems(items: CheckoutItemRequest[]): string | null {
 // ---------------------------------------------------------------------------
 
 interface PrintifyProduct {
-  id: number;
+  id: string | number;
   title: string;
   description: string;
   tags: string[];
@@ -137,8 +137,8 @@ function isPrintifyPublished(product: PrintifyProduct): boolean {
   return records.some((r) => typeof r?.id === "string" && r.id.trim().length > 0 && typeof r?.handle === "string" && r.handle.trim().length > 0);
 }
 
-async function fetchAllPrintifyProducts(): Promise<Map<number, PrintifyProduct>> {
-  const map = new Map<number, PrintifyProduct>();
+async function fetchAllPrintifyProducts(): Promise<Map<string, PrintifyProduct>> {
+  const map = new Map<string, PrintifyProduct>();
   if (!PRINTIFY_API_TOKEN || !PRINTIFY_SHOP_ID) return map;
 
   const url = `${PRINTIFY_API_BASE}/shops/${PRINTIFY_SHOP_ID}/products.json`;
@@ -148,13 +148,13 @@ async function fetchAllPrintifyProducts(): Promise<Map<number, PrintifyProduct>>
   const data = await res.json();
   const products: PrintifyProduct[] = Array.isArray(data) ? data : data?.data ?? [];
   for (const p of products) {
-    if (isPrintifyPublished(p)) map.set(p.id, p);
+    if (isPrintifyPublished(p)) map.set(String(p.id), p);
   }
   return map;
 }
 
 async function fetchPrintifyShippingEstimate(
-  productId: number,
+  productId: string | number,
   variantId: number,
   quantity: number,
   address: ShippingAddressRequest,
@@ -361,7 +361,7 @@ Deno.serve(async (req: Request) => {
     for (const item of items) {
       if (item.source === "printify") {
         // Validate Printify product
-        const product = printifyMap.get(item.productId);
+        const product = printifyMap.get(String(item.productId));
         if (!product) {
           errors.push(`Product ${item.productId} is no longer available`);
           continue;
