@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
-import { ShoppingBag, ChevronDown, ChevronUp } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { ShoppingBag } from 'lucide-react';
+import { useMemo } from 'react';
 import { useProducts } from '../hooks/usePrintify';
 import { useManualProducts } from '../hooks/useManualProducts';
 import { PrintifyProduct } from '../types';
@@ -74,16 +74,12 @@ function ProductSkeleton() {
 export function Shop() {
   const { products: printifyProducts, loading: printifyLoading, error: printifyError } = useProducts();
   const { products: manualProducts, loading: manualLoading, error: manualError } = useManualProducts();
-  const [isExpanded, setIsExpanded] = useState(false);
-
   const products = useMemo(
     () => [...printifyProducts, ...manualProducts],
     [printifyProducts, manualProducts]
   );
   const loading = printifyLoading || manualLoading;
   const error = printifyError && manualError ? printifyError : null;
-
-  const displayedProducts = isExpanded ? products : products.slice(0, 4);
 
   if (error) {
     return (
@@ -128,31 +124,10 @@ export function Shop() {
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {displayedProducts.map((product) => (
+              {products.map((product) => (
                 <ProductCard key={product.id} product={product} />
               ))}
             </div>
-
-            {products.length > 4 && (
-              <div className="mt-6 sm:mt-8 text-center">
-                <button
-                  onClick={() => setIsExpanded(!isExpanded)}
-                  className="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-white/5 text-white text-xs sm:text-sm tracking-wide hover:bg-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-white/20 rounded"
-                >
-                  {isExpanded ? (
-                    <>
-                      SHOW LESS
-                      <ChevronUp className="w-4 h-4" />
-                    </>
-                  ) : (
-                    <>
-                      SHOW MORE
-                      <ChevronDown className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
           </>
         )}
       </div>
