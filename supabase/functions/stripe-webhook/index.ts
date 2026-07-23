@@ -42,7 +42,7 @@ async function isEventProcessed(eventId: string): Promise<boolean> {
   return data !== null;
 }
 
-async function markEventProcessed(eventId: string, eventType: string): Promise<void> {
+async function markEventProcessed(eventId: string, eventType: string, livemode: boolean): Promise<void> {
   // Insert; if the event was already processed by a concurrent request,
   // the unique constraint on stripe_event_id will reject the duplicate,
   // which is fine — the caller already processed it.
@@ -51,6 +51,7 @@ async function markEventProcessed(eventId: string, eventType: string): Promise<v
     .insert({
       stripe_event_id: eventId,
       event_type: eventType,
+      stripe_livemode: livemode,
     });
 }
 
@@ -62,6 +63,7 @@ interface OrderRow {
   id: string;
   status: string;
   stripe_checkout_session_id: string | null;
+  stripe_livemode: boolean | null;
   email: string;
   currency: string;
   subtotal_cents: number;
@@ -278,6 +280,14 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
   // Confirm the session belongs to this order
   if (order.stripe_checkout_session_id !== session.id) {
     console.error(`Session ID mismatch: order has ${order.stripe_checkout_session_id}, event has ${session.id}`);
+    return;
+  }
+
+  // Validate livemode: the event's livemode must match the order's snapshot
+  if (order.stripe_livemode !== null && session.livemode !== order.stripe_livemode) {
+    console.error(
+      `Livemode mismatch: order=${order.stripe_livemode}, event=${session.livemode}, order=${orderId}`,
+    );
     return;
   }
 
@@ -550,7 +560,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Mark event as processed
-    await markEventProcessed(event.id, event.type);
+    await markEventProcessed(event.id, event.type, event.livemode === true);
 
     return new Response(JSON.stringify({ received: true }), {
       status: 200,

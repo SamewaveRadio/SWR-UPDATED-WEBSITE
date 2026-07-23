@@ -12,6 +12,7 @@ const PRINTIFY_API_TOKEN = Deno.env.get("PRINTIFY_API_TOKEN");
 const PRINTIFY_SHOP_ID = Deno.env.get("PRINTIFY_SHOP_ID");
 const PRINTIFY_API_BASE = "https://api.printify.com/v1";
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
+const STORE_CHECKOUT_ENABLED = Deno.env.get("STORE_CHECKOUT_ENABLED") === "true";
 
 const SITE_URL = Deno.env.get("SITE_URL") ?? "https://samewave.radio";
 
@@ -289,6 +290,10 @@ Deno.serve(async (req: Request) => {
 
     if (!STRIPE_SECRET_KEY) {
       return jsonResponse({ error: "Stripe is not configured" }, 500);
+    }
+
+    if (!STORE_CHECKOUT_ENABLED) {
+      return jsonResponse({ error: "Checkout is currently unavailable" }, 503);
     }
 
     const body = await req.json() as CheckoutRequestBody;
@@ -677,11 +682,12 @@ Deno.serve(async (req: Request) => {
       },
     } as any);
 
-    // Update order with Stripe session ID
+    // Update order with Stripe session ID and livemode snapshot
     await supabase
       .from("orders")
       .update({
         stripe_checkout_session_id: session.id,
+        stripe_livemode: session.livemode === true,
         status: "pending",
       })
       .eq("id", orderId);
