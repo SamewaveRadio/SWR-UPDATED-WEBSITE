@@ -56,65 +56,60 @@ export function ProductPage() {
     return Array.from(set);
   }, [product]);
 
-  // Filtered gallery images based on selected colorway
+  // Gallery shows ALL product images, ordered: general primary first, then
+  // each colorway's primary + images, then remaining general images.
   const galleryImages = useMemo<PrintifyMockupImage[]>(() => {
     if (!product) return [];
+    if (colorways.length === 0) return product.mockupImages;
 
-    if (colorways.length === 0 || !selectedColorwayId) {
-      return product.mockupImages;
-    }
-
-    const colorwayImages = product.mockupImages.filter(
-      (img) => img.colorwayId === selectedColorwayId
-    );
-    const generalImages = product.mockupImages.filter(
-      (img) => !img.colorwayId
-    );
-
-    // Deduplicate by src
     const seen = new Set<string>();
-    const merged: PrintifyMockupImage[] = [];
+    const ordered: PrintifyMockupImage[] = [];
 
-    // Put colorway primary first, then other colorway images, then general
-    const colorwayPrimary = colorwayImages.find((img) => img.isPrimary);
-    if (colorwayPrimary) {
-      merged.push(colorwayPrimary);
-      seen.add(colorwayPrimary.src);
-    }
-
-    for (const img of colorwayImages) {
-      if (!seen.has(img.src)) {
-        merged.push(img);
+    const push = (img: PrintifyMockupImage | undefined) => {
+      if (img && !seen.has(img.src)) {
+        ordered.push(img);
         seen.add(img.src);
+      }
+    };
+
+    // General primary first
+    push(product.mockupImages.find((img) => !img.colorwayId && img.isPrimary));
+
+    // Each colorway: primary, then other images for that colorway
+    for (const cw of colorways) {
+      push(product.mockupImages.find((img) => img.colorwayId === cw.id && img.isPrimary));
+      for (const img of product.mockupImages) {
+        if (img.colorwayId === cw.id && !img.isPrimary) push(img);
       }
     }
 
-    // General primary first, then other general images
-    const generalPrimary = generalImages.find((img) => img.isPrimary);
-    if (generalPrimary && !seen.has(generalPrimary.src)) {
-      merged.push(generalPrimary);
-      seen.add(generalPrimary.src);
+    // Remaining general images
+    for (const img of product.mockupImages) {
+      if (!img.colorwayId && !img.isPrimary) push(img);
     }
 
-    for (const img of generalImages) {
-      if (!seen.has(img.src)) {
-        merged.push(img);
-        seen.add(img.src);
-      }
-    }
+    // Any images not yet included (safety net)
+    for (const img of product.mockupImages) push(img);
 
-    // Fallback: if no matching images at all, use all product images
-    if (merged.length === 0) {
-      return product.mockupImages;
-    }
+    return ordered.length > 0 ? ordered : product.mockupImages;
+  }, [product, colorways]);
 
-    return merged;
-  }, [product, colorways, selectedColorwayId]);
+  // Index of the selected colorway's primary image in the gallery
+  const colorwayPrimaryIndex = useMemo(() => {
+    if (!product || !selectedColorwayId || colorways.length === 0) return 0;
+    const primary = galleryImages.findIndex(
+      (img) => img.colorwayId === selectedColorwayId && img.isPrimary
+    );
+    if (primary >= 0) return primary;
+    // Fallback: first image for this colorway
+    const first = galleryImages.findIndex((img) => img.colorwayId === selectedColorwayId);
+    return first >= 0 ? first : 0;
+  }, [product, galleryImages, selectedColorwayId, colorways]);
 
-  // Reset image index when gallery changes
+  // Jump to the selected colorway's primary image
   useEffect(() => {
-    setCurrentImageIndex(0);
-  }, [selectedColorwayId, productId]);
+    setCurrentImageIndex(colorwayPrimaryIndex);
+  }, [colorwayPrimaryIndex, productId]);
 
   // Preload nearby colorway images
   const preloadRef = useRef<Set<string>>(new Set());
@@ -435,7 +430,7 @@ export function ProductPage() {
 
               {hasMultipleImages && (
                 <div className="mt-4 grid grid-cols-5 gap-2">
-                  {galleryImages.slice(0, 6).map((image, idx) => (
+                  {galleryImages.slice(0, 10).map((image, idx) => (
                     <button
                       key={image.id + '-' + idx}
                       onClick={() => setCurrentImageIndex(idx)}
