@@ -314,6 +314,7 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
   const [images, setImages] = useState<ImageRow[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [createdId, setCreatedId] = useState<string | null>(null);
 
   useEffect(() => {
     if (detail) {
@@ -378,7 +379,7 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
   };
 
   const buildPayload = (targetVisibility: ProductVisibility) => ({
-    id: productId ?? undefined,
+    id: (productId ?? createdId) ?? undefined,
     slug: slug.trim(),
     title: title.trim(),
     description,
@@ -416,7 +417,7 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
     setError(null);
 
     try {
-      if (isEditing) {
+      if (isEditing || createdId) {
         await updateProduct(buildPayload(targetVisibility));
       } else {
         await createProduct(buildPayload(targetVisibility));
@@ -424,6 +425,28 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save product');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePreview = async () => {
+    if (!title.trim()) { setError('Title is required'); return; }
+    if (!slug.trim()) { setError('Slug is required'); return; }
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      if (isEditing || createdId) {
+        await updateProduct(buildPayload('draft'));
+      } else {
+        const created = await createProduct(buildPayload('draft'));
+        setCreatedId(created.id);
+      }
+      window.open(`/shop/${slug.trim()}`, '_blank');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save product for preview');
     } finally {
       setSaving(false);
     }
@@ -698,14 +721,14 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
             <Send className="w-4 h-4" />
             Publish Publicly
           </button>
-          <Link
-            to={slug ? `/shop/${slug}` : '#'}
-            target="_blank"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-white/5 text-white/70 text-sm font-medium hover:bg-white/10 transition-colors rounded"
+          <button
+            onClick={handlePreview}
+            disabled={saving}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white/5 text-white/70 text-sm font-medium hover:bg-white/10 transition-colors rounded disabled:opacity-50"
           >
             <Eye className="w-4 h-4" />
             Preview
-          </Link>
+          </button>
           {isEditing && (
             <button
               onClick={async () => {
