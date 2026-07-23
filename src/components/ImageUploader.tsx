@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
-import { Upload, X, Star, GripVertical, Loader2, AlertCircle, Image as ImageIcon, Link } from 'lucide-react';
+import { Upload, X, Star, GripVertical, Loader2, AlertCircle, Image as ImageIcon, Link, RotateCcw } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -23,10 +24,15 @@ interface ImageUploaderProps {
   onImagesChange: (images: ProductImageRow[]) => void;
 }
 
+type UploadStatus = 'uploading' | 'inserting' | 'complete' | 'failed';
+
 interface UploadState {
   fileName: string;
   progress: number;
+  status: UploadStatus;
   error: string | null;
+  localPreviewUrl: string | null;
+  file: File | null;
 }
 
 function getAuthToken(): string | null {
@@ -36,6 +42,7 @@ function getAuthToken(): string | null {
 async function fetchPresign(productId: string, file: File): Promise<{
   uploadUrl: string;
   objectKey: string;
+  publicUrl: string;
 }> {
   const token = getAuthToken();
   if (!token) throw new Error('Not authenticated');
@@ -58,14 +65,14 @@ async function fetchPresign(productId: string, file: File): Promise<{
   if (!res.ok) {
     throw new Error(data.error ?? `Failed to get upload URL (${res.status})`);
   }
-  return { uploadUrl: data.uploadUrl, objectKey: data.objectKey };
+  return { uploadUrl: data.uploadUrl, objectKey: data.objectKey, publicUrl: data.publicUrl };
 }
 
 async function uploadToR2(
   uploadUrl: string,
   file: File,
   onProgress: (progress: number) => void,
-): Promise<void> {
+): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', uploadUrl, true);
@@ -78,16 +85,46 @@ async function uploadToR2(
     };
 
     xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve();
+      const ok = xhr.status >= 200 && xhr.status < 300;
+      console.log('[ImageUploader] R2 PUT status:', xhr.status, 'ok:', ok);
+      if (ok) {
+        resolve(true);
       } else {
-        reject(new Error(`Upload failed (${xhr.status})`));
+        reject(new Error(`R2 upload failed (HTTP ${xhr.status})`));
       }
     };
 
-    xhr.onerror = () => reject(new Error('Network error during upload'));
+    xhr.onerror = () => reject(new Error('Network error during R2 upload'));
     xhr.send(file);
   });
+}
+
+async function insertImageRecord(
+  productId: string,
+  objectKey: string,
+  publicUrl: string,
+  altText: string,
+  position: number,
+): Promise<{ id: string }> {
+  const { data, error } = await supabase
+    .from('product_images')
+    .insert({
+      product_id: productId,
+      src: publicUrl,
+      alt: altText || null,
+      position,
+      r2_key: objectKey,
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('[ImageUploader] DB insert error:', error.message, '(code:', error.code, ')');
+    throw new Error(`Database insert failed: ${error.message}`);
+  }
+
+  console.log('[ImageUploader] DB insert success, image id:', data.id);
+  return { id: data.id };
 }
 
 async function deleteR2Image(imageId: string): Promise<void> {
@@ -110,10 +147,13 @@ async function deleteR2Image(imageId: string): Promise<void> {
   }
 }
 
-function buildPublicUrl(objectKey: string): string {
-  const base = import.meta.env.VITE_R2_PUBLIC_BASE_URL;
-  if (!base) return objectKey;
-  return `${base.replace(/\/$/, '')}/${objectKey}`;
+function verifyImageUrl(url: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
 }
 
 export function ImageUploader({ productId, images, onImagesChange }: ImageUploaderProps) {
@@ -126,6 +166,80 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
   const [externalAlt, setExternalAlt] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const updateUpload = (index: number, patch: Partial<UploadState>) => {
+    setUploads((prev) => prev.map((u, i) => (i === index ? { ...u, ...patch } : u)));
+  };
+
+  const processFile = useCallback(async (file: File, uploadIndex: number) => {
+    if (!productId) {
+      setError('Save the product first before uploading images.');
+      setUploads((prev) => prev.filter((_, i) => i !== uploadIndex));
+      return;
+    }
+
+    updateUpload(uploadIndex, { status: 'uploading', progress: 0, error: null });
+
+    try {
+      // 1. Get presigned URL
+      const { uploadUrl, objectKey, publicUrl } = await fetchPresign(productId, file);
+      console.log('[ImageUploader] objectKey:', objectKey);
+
+      // 2. Upload to R2
+      await uploadToR2(uploadUrl, file, (progress) => {
+        updateUpload(uploadIndex, { progress });
+      });
+
+      // 3. Insert DB record
+      updateUpload(uploadIndex, { status: 'inserting' });
+      const position = images.length + uploadIndex;
+      const inserted = await insertImageRecord(productId, objectKey, publicUrl, '', position);
+
+      // 4. Verify the public URL loads
+      const urlWorks = await verifyImageUrl(publicUrl);
+      console.log('[ImageUploader] publicUrl:', publicUrl, 'loads:', urlWorks);
+
+      if (!urlWorks) {
+        console.warn('[ImageUploader] Public URL did not load, but DB insert succeeded');
+      }
+
+      // 5. Replace local preview with final URL, clear pending state
+      onImagesChange([
+        ...images,
+        {
+          id: inserted.id,
+          src: publicUrl,
+          alt: '',
+          position,
+          r2Key: objectKey,
+          pending: false,
+        },
+      ]);
+
+      // 6. Revoke the temporary object URL
+      const state = uploads[uploadIndex];
+      if (state?.localPreviewUrl) {
+        URL.revokeObjectURL(state.localPreviewUrl);
+      }
+
+      updateUpload(uploadIndex, { status: 'complete', progress: 100, localPreviewUrl: null, file: null });
+      console.log('[ImageUploader] Upload complete for', file.name);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Upload failed';
+      console.error('[ImageUploader] Upload failed for', file.name, ':', msg);
+      updateUpload(uploadIndex, { status: 'failed', error: msg });
+      setError(msg);
+    } finally {
+      // Always clear uploading/inserting state so it can't be permanent
+      setUploads((prev) =>
+        prev.map((u, i) =>
+          i === uploadIndex && u.status !== 'complete' && u.status !== 'failed'
+            ? { ...u, status: 'failed', error: u.error ?? 'Upload interrupted' }
+            : u,
+        ),
+      );
+    }
+  }, [productId, images, onImagesChange, uploads]);
+
   const handleFileSelect = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     if (!productId) {
@@ -135,6 +249,7 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
 
     setError(null);
 
+    const validFiles: File[] = [];
     for (const file of Array.from(files)) {
       if (!ALLOWED_TYPES.includes(file.type)) {
         setError(`${file.name}: Only JPEG, PNG, and WebP images are allowed.`);
@@ -144,33 +259,48 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
         setError(`${file.name}: File exceeds 10 MB limit.`);
         continue;
       }
+      validFiles.push(file);
+    }
 
-      const uploadIndex = uploads.length;
-      setUploads((prev) => [...prev, { fileName: file.name, progress: 0, error: null }]);
+    if (validFiles.length === 0) return;
 
-      try {
-        const { uploadUrl, objectKey } = await fetchPresign(productId, file);
-        await uploadToR2(uploadUrl, file, (progress) => {
-          setUploads((prev) => prev.map((u, i) => i === uploadIndex ? { ...u, progress } : u));
-        });
+    // Create upload slots with local previews
+    const newUploads: UploadState[] = validFiles.map((file) => ({
+      fileName: file.name,
+      progress: 0,
+      status: 'uploading' as UploadStatus,
+      error: null,
+      localPreviewUrl: URL.createObjectURL(file),
+      file,
+    }));
 
-        const publicUrl = buildPublicUrl(objectKey);
-        onImagesChange([
-          ...images,
-          { src: publicUrl, alt: '', position: images.length, r2Key: objectKey, pending: true },
-        ]);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Upload failed';
-        setUploads((prev) => prev.map((u, i) => i === uploadIndex ? { ...u, error: msg } : u));
-        setError(msg);
-      }
+    const startIndex = uploads.length;
+    setUploads((prev) => [...prev, ...newUploads]);
+
+    // Process each file sequentially
+    for (let i = 0; i < validFiles.length; i++) {
+      await processFile(validFiles[i], startIndex + i);
     }
 
     // Clear completed uploads after a delay
     setTimeout(() => {
-      setUploads((prev) => prev.filter((u) => u.error !== null));
+      setUploads((prev) => prev.filter((u) => u.status === 'failed' || u.status === 'uploading' || u.status === 'inserting'));
     }, 3000);
-  }, [productId, images, uploads.length, onImagesChange]);
+  }, [productId, uploads.length, processFile]);
+
+  const handleRetry = useCallback(async (uploadIndex: number) => {
+    const upload = uploads[uploadIndex];
+    if (!upload?.file) return;
+    await processFile(upload.file, uploadIndex);
+  }, [uploads, processFile]);
+
+  const handleRemoveUpload = useCallback((uploadIndex: number) => {
+    const upload = uploads[uploadIndex];
+    if (upload?.localPreviewUrl) {
+      URL.revokeObjectURL(upload.localPreviewUrl);
+    }
+    setUploads((prev) => prev.filter((_, i) => i !== uploadIndex));
+  }, [uploads]);
 
   const handleDrop = useCallback((e: React.DragEvent, dropIndex: number) => {
     e.preventDefault();
@@ -262,21 +392,49 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
         <div className="space-y-2 mb-4">
           {uploads.map((u, i) => (
             <div key={i} className="bg-white/5 rounded p-2">
-              {u.error ? (
-                <div className="flex items-center gap-2 text-red-300 text-xs">
-                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span className="truncate">{u.fileName}: {u.error}</span>
+              {u.status === 'failed' ? (
+                <div>
+                  <div className="flex items-center gap-2 text-red-300 text-xs mb-2">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span className="truncate">{u.fileName}: {u.error}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleRetry(i)}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded transition-colors"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      Retry
+                    </button>
+                    <button
+                      onClick={() => handleRemoveUpload(i)}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs text-white/50 hover:text-red-400 bg-white/5 hover:bg-red-500/10 rounded transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : u.status === 'complete' ? (
+                <div className="flex items-center gap-2 text-green-300 text-xs">
+                  <ImageIcon className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="truncate">{u.fileName}: uploaded</span>
                 </div>
               ) : (
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-white/60 text-xs truncate">{u.fileName}</span>
-                    <span className="text-white/40 text-xs">{u.progress}%</span>
+                    <span className="text-white/60 text-xs truncate flex items-center gap-1.5">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      {u.fileName}
+                    </span>
+                    <span className="text-white/40 text-xs">
+                      {u.status === 'inserting' ? 'Saving...' : `${u.progress}%`}
+                    </span>
                   </div>
                   <div className="h-1 bg-white/10 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-white transition-all duration-200"
-                      style={{ width: `${u.progress}%` }}
+                      style={{ width: `${u.status === 'inserting' ? 100 : u.progress}%` }}
                     />
                   </div>
                 </div>
@@ -359,12 +517,6 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
                   <X className="w-3 h-3" />
                 </button>
               </div>
-
-              {img.pending && (
-                <div className="absolute bottom-1 right-1 text-white/30 text-xs flex items-center gap-1">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                </div>
-              )}
             </div>
           ))}
         </div>

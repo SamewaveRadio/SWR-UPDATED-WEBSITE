@@ -121,9 +121,15 @@ Deno.serve(async (req: Request) => {
       expiresIn: PRESIGN_TTL_SECONDS,
     });
 
+    const publicBase = Deno.env.get("R2_PUBLIC_BASE_URL");
+    const publicUrl = publicBase
+      ? `${publicBase.replace(/\/$/, "")}/${objectKey}`
+      : `${objectKey}`;
+
     return jsonResponse({
       uploadUrl,
       objectKey,
+      publicUrl,
       headers: {
         "Content-Type": contentType,
       },
