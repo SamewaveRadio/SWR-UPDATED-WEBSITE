@@ -27,6 +27,7 @@ export function ProductPage() {
   const { addToCart, loading: cartLoading } = useCartContext();
 
   const [selectedColorwayId, setSelectedColorwayId] = useState<string | null>(null);
+  const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -138,6 +139,13 @@ export function ProductPage() {
     }
   }, [colorways, selectedColorwayId]);
 
+  // Auto-select first color for Printify products without colorways
+  useEffect(() => {
+    if (colorways.length === 0 && colors.length > 0 && !selectedColor) {
+      setSelectedColor(colors[0]);
+    }
+  }, [colorways, colors, selectedColor]);
+
   // Resolve the colorway name for the selected colorwayId (for fallback matching)
   const selectedColorwayName = useMemo(() => {
     if (!selectedColorwayId || !product?._colorways) return null;
@@ -158,6 +166,16 @@ export function ProductPage() {
       if (matching) return matching;
     }
 
+    // Printify products without colorways: filter by selected color
+    if (colorways.length === 0 && selectedColor) {
+      const matching = product.variants.find(
+        (v) =>
+          v.color === selectedColor &&
+          (selectedSize ? v.size === selectedSize : true)
+      );
+      if (matching) return matching;
+    }
+
     // Fallback: match by color string (legacy / Printify)
     return (
       product.variants.find(
@@ -168,15 +186,21 @@ export function ProductPage() {
           (selectedSize ? v.size === selectedSize : true)
       ) ?? product.variants[0]
     );
-  }, [product, selectedColorwayId, selectedSize, colorways, selectedColorwayName]);
+  }, [product, selectedColorwayId, selectedColor, selectedSize, colorways, selectedColorwayName]);
 
-  // Available sizes for the selected colorway
+  // Available sizes for the selected colorway (or selected color for Printify)
   const availableSizes = useMemo(() => {
     if (!product) return new Set<string>();
     const set = new Set<string>();
     product.variants.forEach((v) => {
       if (!v.size) return;
-      if (colorways.length === 0 || !selectedColorwayId) {
+      if (colorways.length === 0) {
+        // Printify without colorways: filter by selected color
+        if (selectedColor && v.color !== selectedColor) return;
+        set.add(v.size);
+        return;
+      }
+      if (!selectedColorwayId) {
         set.add(v.size);
         return;
       }
@@ -188,7 +212,7 @@ export function ProductPage() {
       }
     });
     return set;
-  }, [product, selectedColorwayId, colorways, selectedColorwayName]);
+  }, [product, selectedColorwayId, selectedColor, colorways, selectedColorwayName]);
 
   useEffect(() => {
     if (product) {
@@ -576,7 +600,7 @@ export function ProductPage() {
                 </div>
               )}
 
-              {/* Legacy color selector (Printify products without colorways) */}
+              {/* Color selector (Printify products without colorways) */}
               {colorways.length === 0 && colors.length > 0 && (
                 <div className="mb-6">
                   <label className="block text-white/60 text-sm mb-2">
@@ -586,9 +610,12 @@ export function ProductPage() {
                     {colors.map((color) => (
                       <button
                         key={color}
-                        onClick={() => setSelectedColorwayId(null)}
+                        onClick={() => {
+                          setSelectedColor(color);
+                          setSelectedSize(null);
+                        }}
                         className={`px-4 py-2 text-sm border transition-colors ${
-                          selectedColorwayId === null
+                          selectedColor === color
                             ? 'border-white bg-white text-black'
                             : 'border-white/20 text-white hover:border-white/40'
                         }`}
