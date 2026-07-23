@@ -84,7 +84,7 @@ function calculateShippingEstimate(items: CartItem[]): ShippingEstimate {
   if (hasPrintify) {
     return {
       shippingCents: FLAT_SHIPPING_CENTS,
-      message: 'Printify items require standard shipping.',
+      message: null,
     };
   }
 
