@@ -129,7 +129,7 @@ export function useManualProductBySlug(slug: string | undefined, preview = false
         const data = await res.json();
         if (!cancelled) {
           setProduct(toPrintifyFormat(data));
-          setVisibility(data.product?.visibility ?? 'public');
+          setVisibility(data.visibility ?? 'public');
           setError(null);
         }
       })

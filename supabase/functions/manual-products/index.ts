@@ -81,7 +81,34 @@ Deno.serve(async (req: Request) => {
         .eq("product_id", product.id)
         .order("position", { ascending: true });
 
-      return jsonResponse({ product, variants: variants ?? [], images: images ?? [] });
+      return jsonResponse({
+        id: product.id,
+        slug: product.slug,
+        title: product.title,
+        description: product.description,
+        source: product.source,
+        basePriceCents: product.base_price_cents,
+        currency: product.currency,
+        category: product.category,
+        tags: product.tags,
+        visibility: product.visibility,
+        images: (images ?? []).map((img, i) => ({
+          id: `img-${i}`,
+          src: img.src,
+          alt: product.title,
+          position: img.position,
+        })),
+        variants: (variants ?? []).map(v => ({
+          id: v.id,
+          variantId: v.id,
+          sku: null,
+          title: v.title,
+          color: v.options?.color ?? null,
+          size: v.options?.size ?? null,
+          price: new Intl.NumberFormat("en-US", { style: "currency", currency: product.currency || "USD" }).format(v.price_cents / 100),
+          priceCents: v.price_cents,
+        })),
+      });
     }
 
     // List only public products for the shop
