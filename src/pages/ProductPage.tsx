@@ -11,12 +11,10 @@ import type { PrintifyMockupImage } from '../types';
 export function ProductPage() {
   const { productId } = useParams<{ productId: string }>();
 
-  const isPrintifyId = productId != null && /^\d+$/.test(productId);
-
-  const printifyHook = useProduct(isPrintifyId ? productId : undefined);
+  const printifyHook = useProduct(productId);
   const { session } = useAdminAuth();
   const isAdmin = Boolean(session);
-  const manualHook = useManualProductBySlug(isPrintifyId ? undefined : productId, isAdmin);
+  const manualHook = useManualProductBySlug(productId, isAdmin);
 
   const product = printifyHook.product ?? manualHook.product;
   const loading = !product && (printifyHook.loading || manualHook.loading);
