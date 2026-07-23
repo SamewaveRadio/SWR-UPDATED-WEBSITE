@@ -439,12 +439,12 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
 
     try {
       if (isEditing || createdId) {
-        await updateProduct(buildPayload('draft'));
+        await updateProduct(buildPayload(visibility));
       } else {
-        const created = await createProduct(buildPayload('draft'));
+        const created = await createProduct(buildPayload(visibility));
         setCreatedId(created.id);
       }
-      window.open(`/shop/${slug.trim()}`, '_blank');
+      window.open(`/shop/${slug.trim()}?preview=true`, '_blank');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save product for preview');
     } finally {
