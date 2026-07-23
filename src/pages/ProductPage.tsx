@@ -462,6 +462,12 @@ export function ProductPage() {
                 </div>
               )}
 
+              {isUnlisted && product.description && (
+                <div className="mb-6 text-white/70 text-sm leading-relaxed whitespace-pre-line">
+                  {product.description}
+                </div>
+              )}
+
               {activeVariant && (
                 <div className="flex items-baseline gap-3 mb-6">
                   <span className="text-xl sm:text-2xl text-white font-medium">
