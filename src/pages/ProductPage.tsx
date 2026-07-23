@@ -142,6 +142,13 @@ export function ProductPage() {
     }
   }, [colorways, selectedColorwayId]);
 
+  // Resolve the colorway name for the selected colorwayId (for fallback matching)
+  const selectedColorwayName = useMemo(() => {
+    if (!selectedColorwayId || !product?._colorways) return null;
+    const cw = product._colorways.find(c => c.id === selectedColorwayId);
+    return cw?.name ?? null;
+  }, [product, selectedColorwayId]);
+
   const activeVariant = useMemo(() => {
     if (!product || product.variants.length === 0) return null;
 
@@ -149,7 +156,7 @@ export function ProductPage() {
     if (colorways.length > 0 && selectedColorwayId) {
       const matching = product.variants.find(
         (v) =>
-          v._colorwayId === selectedColorwayId &&
+          (v._colorwayId === selectedColorwayId || (!v._colorwayId && selectedColorwayName && v.color === selectedColorwayName)) &&
           (selectedSize ? v.size === selectedSize : true)
       );
       if (matching) return matching;
@@ -160,31 +167,32 @@ export function ProductPage() {
       product.variants.find(
         (v) =>
           (selectedColorwayId
-            ? v._colorwayId === selectedColorwayId
+            ? v._colorwayId === selectedColorwayId || (!v._colorwayId && selectedColorwayName && v.color === selectedColorwayName)
             : true) &&
           (selectedSize ? v.size === selectedSize : true)
       ) ?? product.variants[0]
     );
-  }, [product, selectedColorwayId, selectedSize, colorways]);
+  }, [product, selectedColorwayId, selectedSize, colorways, selectedColorwayName]);
 
   // Available sizes for the selected colorway
   const availableSizes = useMemo(() => {
     if (!product) return new Set<string>();
-    if (colorways.length === 0 || !selectedColorwayId) {
-      const set = new Set<string>();
-      product.variants.forEach((v) => {
-        if (v.size) set.add(v.size);
-      });
-      return set;
-    }
     const set = new Set<string>();
     product.variants.forEach((v) => {
-      if (v._colorwayId === selectedColorwayId && v.size) {
+      if (!v.size) return;
+      if (colorways.length === 0 || !selectedColorwayId) {
+        set.add(v.size);
+        return;
+      }
+      // Match by colorway_id, or fall back to color name if colorway_id is null
+      if (v._colorwayId === selectedColorwayId) {
+        set.add(v.size);
+      } else if (!v._colorwayId && selectedColorwayName && v.color === selectedColorwayName) {
         set.add(v.size);
       }
     });
     return set;
-  }, [product, selectedColorwayId, colorways]);
+  }, [product, selectedColorwayId, colorways, selectedColorwayName]);
 
   useEffect(() => {
     if (product) {

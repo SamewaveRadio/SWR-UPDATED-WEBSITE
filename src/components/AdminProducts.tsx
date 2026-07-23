@@ -445,10 +445,11 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
       options: {},
       priceCents: basePriceCents,
       inventoryQuantity: 0,
+      colorwayId: colorways.length > 0 ? colorways[0].id ?? null : null,
     }]);
   };
 
-  const updateVariant = (index: number, field: keyof VariantRow, value: string | number | Record<string, string>) => {
+  const updateVariant = (index: number, field: keyof VariantRow, value: string | number | Record<string, string> | null) => {
     setVariants(prev => prev.map((v, i) => i === index ? { ...v, [field]: value } : v));
   };
 
@@ -722,13 +723,28 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
                   className="col-span-2 px-2 py-1.5 bg-black/30 text-white text-xs rounded border border-white/10 focus:outline-none focus:border-white/30 placeholder-white/30"
                   placeholder="SKU"
                 />
-                <input
-                  type="text"
-                  value={v.options.color ?? ''}
-                  onChange={(e) => updateVariant(i, 'options', { ...v.options, color: e.target.value })}
-                  className="col-span-2 px-2 py-1.5 bg-black/30 text-white text-xs rounded border border-white/10 focus:outline-none focus:border-white/30 placeholder-white/30"
-                  placeholder="Color"
-                />
+                {colorways.length > 0 ? (
+                  <select
+                    value={v.colorwayId ?? ''}
+                    onChange={(e) => updateVariant(i, 'colorwayId', e.target.value || null)}
+                    className="col-span-2 px-2 py-1.5 bg-black/30 text-white text-xs rounded border border-white/10 focus:outline-none focus:border-white/30"
+                  >
+                    <option value="" className="bg-black text-white">No colorway</option>
+                    {colorways.map(cw => (
+                      <option key={cw.id ?? cw.slug} value={cw.id ?? ''} className="bg-black text-white">
+                        {cw.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={v.options.color ?? ''}
+                    onChange={(e) => updateVariant(i, 'options', { ...v.options, color: e.target.value })}
+                    className="col-span-2 px-2 py-1.5 bg-black/30 text-white text-xs rounded border border-white/10 focus:outline-none focus:border-white/30 placeholder-white/30"
+                    placeholder="Color"
+                  />
+                )}
                 <input
                   type="text"
                   value={v.options.size ?? ''}
