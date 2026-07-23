@@ -111,14 +111,14 @@ export function useManualProductBySlug(slug: string | undefined, preview = false
     setLoading(true);
     setError(null);
 
+    const token = localStorage.getItem('samewave-admin-token');
+    const hasToken = Boolean(token);
+
     const params = new URLSearchParams({ slug });
-    if (preview) params.set('preview', 'true');
+    if (preview || hasToken) params.set('preview', 'true');
 
     const headers: Record<string, string> = {};
-    if (preview) {
-      const token = localStorage.getItem('samewave-admin-token');
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-    }
+    if (token) headers['Authorization'] = `Bearer ${token}`;
 
     fetch(`${SUPABASE_URL}/functions/v1/manual-products?${params.toString()}`, { headers })
       .then(async (res) => {
