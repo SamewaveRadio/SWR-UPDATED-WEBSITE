@@ -456,12 +456,6 @@ export function ProductPage() {
                 {product.title}
               </h1>
 
-              {isUnlisted && (
-                <div className="mb-4 px-3 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded text-yellow-200/80 text-xs">
-                  This product is unlisted. It will not appear in the public shop, but the direct link can be shared. This is not true access control — anyone with the URL can view and purchase it.
-                </div>
-              )}
-
               {!canPurchase && (
                 <div className="mb-4 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded text-red-200/80 text-xs">
                   This product is not available for purchase.
