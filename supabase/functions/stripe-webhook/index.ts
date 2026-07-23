@@ -120,6 +120,30 @@ async function getOrderItems(orderId: string): Promise<OrderItemRow[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Order timeline
+// ---------------------------------------------------------------------------
+
+async function logOrderEvent(
+  orderId: string,
+  eventType: string,
+  eventSource: string,
+  message: string,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await supabase.from("order_events").insert({
+      order_id: orderId,
+      event_type: eventType,
+      event_source: eventSource,
+      message,
+      metadata_json: metadata,
+    });
+  } catch (err) {
+    console.error("Failed to log order event:", err);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Inventory: convert reservations to permanent deductions, or release them
 // ---------------------------------------------------------------------------
 
@@ -341,11 +365,20 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
     return;
   }
 
+  const paymentIntentId = typeof session.payment_intent === "string"
+    ? session.payment_intent
+    : (session.payment_intent as any)?.id ?? null;
+
   // Mark order as paid
   const { error: updateError } = await supabase
     .from("orders")
     .update({
       status: "paid",
+      payment_status: "paid",
+      stripe_payment_intent_id: paymentIntentId,
+      tax_cents: stripeTax,
+      discount_cents: stripeDiscount,
+      customer_phone: session.customer_details?.phone ?? null,
       paid_at: new Date().toISOString(),
     })
     .eq("id", orderId);
@@ -355,8 +388,15 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
     return;
   }
 
+  await logOrderEvent(orderId, "payment_completed", "stripe", "Payment completed via Stripe Checkout", {
+    payment_intent_id: paymentIntentId,
+    amount_total_cents: stripeAmountTotal,
+    livemode: session.livemode === true,
+  });
+
   // Convert manual inventory reservations to permanent deductions
   await convertInventoryReservations(orderId);
+  await logOrderEvent(orderId, "inventory_deducted", "system", "Inventory reservations converted to deductions", {});
 
   // Get order items
   const orderItems = await getOrderItems(orderId);
@@ -471,12 +511,15 @@ async function handleAsyncPaymentFailed(session: Stripe.Checkout.Session): Promi
   // Mark order appropriately
   await supabase
     .from("orders")
-    .update({ status: "cancelled" })
+    .update({ status: "cancelled", payment_status: "failed" })
     .eq("id", orderId)
     .in("status", ["pending"]); // Only update if still pending
 
+  await logOrderEvent(orderId, "payment_failed", "stripe", "Async payment failed", {});
+
   // Release inventory reservations
   await releaseInventoryReservations(orderId);
+  await logOrderEvent(orderId, "inventory_released", "system", "Inventory reservations released", {});
 }
 
 async function handleSessionExpired(session: Stripe.Checkout.Session): Promise<void> {
@@ -486,12 +529,15 @@ async function handleSessionExpired(session: Stripe.Checkout.Session): Promise<v
   // Mark order as cancelled if still pending
   await supabase
     .from("orders")
-    .update({ status: "cancelled" })
+    .update({ status: "cancelled", payment_status: "cancelled" })
     .eq("id", orderId)
     .in("status", ["pending"]);
 
+  await logOrderEvent(orderId, "order_cancelled", "stripe", "Checkout session expired", {});
+
   // Release inventory reservations
   await releaseInventoryReservations(orderId);
+  await logOrderEvent(orderId, "inventory_released", "system", "Inventory reservations released", {});
 }
 
 // ---------------------------------------------------------------------------

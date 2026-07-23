@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, Database, Clock, Lock, LogOut, Package, CheckCircle2 } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { RefreshCw, Database, Clock, Lock, LogOut, Package, CheckCircle2, ShoppingCart } from 'lucide-react';
 import { Navigation } from '../components/Navigation';
 import { AdminProducts } from '../components/AdminProducts';
 import { PrintifyRepairPanel } from '../components/PrintifyRepairPanel';
@@ -81,7 +82,11 @@ function AdminLogin() {
 
 export default function AdminPage() {
   const { user, loading: authLoading, signOut } = useAdminAuth();
-  const [tab, setTab] = useState<AdminTab>('mixcloud');
+  const [searchParams] = useSearchParams();
+  const initialTab = (searchParams.get('tab') as AdminTab) || 'mixcloud';
+  const [tab, setTab] = useState<AdminTab>(
+    ['mixcloud', 'products', 'printify'].includes(initialTab) ? initialTab : 'mixcloud',
+  );
   const [status, setStatus] = useState<IndexStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [rebuilding, setRebuilding] = useState(false);
@@ -248,6 +253,13 @@ export default function AdminPage() {
             <CheckCircle2 className="w-4 h-4 inline mr-1.5" />
             Printify
           </button>
+          <Link
+            to="/admin/orders"
+            className="px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px border-transparent text-white/40 hover:text-white/70"
+          >
+            <ShoppingCart className="w-4 h-4 inline mr-1.5" />
+            Orders
+          </Link>
         </div>
 
         {tab === 'products' && <AdminProducts />}

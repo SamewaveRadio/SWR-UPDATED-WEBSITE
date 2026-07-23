@@ -6,6 +6,10 @@ import { ProductPage } from './pages/ProductPage';
 import { CheckoutSuccessPage } from './pages/CheckoutSuccessPage';
 import ExplorePage from './pages/ExplorePage';
 import AdminPage from './pages/AdminPage';
+import OrdersListPage from './pages/OrdersListPage';
+import OrderDetailPage from './pages/OrderDetailPage';
+import { AdminGuard } from './components/AdminGuard';
+import { AdminShell } from './components/AdminShell';
 import { AudioPlayer } from './components/AudioPlayer';
 import { AudioPlayerProvider } from './contexts/AudioPlayerContext';
 import { CartProvider } from './contexts/CartContext';
@@ -30,6 +34,14 @@ function App() {
                 <Route path="/shop/:productId" element={<ProductPage />} />
                 <Route path="/shop/checkout/success" element={<CheckoutSuccessPage />} />
                 <Route path="/admin" element={<AdminPage />} />
+                <Route
+                  path="/admin/orders"
+                  element={<AdminGuard><AdminShell><OrdersListPage /></AdminShell></AdminGuard>}
+                />
+                <Route
+                  path="/admin/orders/:orderId"
+                  element={<AdminGuard><AdminShell><OrderDetailPage /></AdminShell></AdminGuard>}
+                />
               </Routes>
             </AdminAuthProvider>
             <AudioPlayer />
