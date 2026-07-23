@@ -277,7 +277,7 @@ export function ProductPage() {
 
               {hasMultipleImages && (
                 <div className="mt-4 grid grid-cols-5 gap-2">
-                  {product.mockupImages.slice(0, 5).map((image, idx) => (
+                  {product.mockupImages.slice(0, 6).map((image, idx) => (
                     <button
                       key={image.id}
                       onClick={() => setCurrentImageIndex(idx)}

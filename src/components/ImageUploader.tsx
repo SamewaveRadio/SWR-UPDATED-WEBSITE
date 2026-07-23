@@ -6,6 +6,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_IMAGES = 6;
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 export interface ProductImageRow {
@@ -247,6 +248,11 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
       return;
     }
 
+    if (images.length >= MAX_IMAGES) {
+      setError(`Maximum ${MAX_IMAGES} images per product. Remove one before adding more.`);
+      return;
+    }
+
     setError(null);
 
     const validFiles: File[] = [];
@@ -383,7 +389,7 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
           Drag & drop images here, or click to browse
         </p>
         <p className="text-white/30 text-xs mt-1">
-          JPEG, PNG, WebP — max 10 MB each
+          JPEG, PNG, WebP — max 10 MB each — up to {MAX_IMAGES} images
         </p>
       </div>
 
