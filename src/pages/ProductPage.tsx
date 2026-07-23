@@ -10,10 +10,15 @@ import { Navigation } from '../components/Navigation';
 export function ProductPage() {
   const { productId } = useParams<{ productId: string }>();
 
-  const printifyHook = useProduct(productId);
+  // Printify product IDs are numeric; manual product slugs are not.
+  // Only fetch from Printify when the param is a numeric ID to avoid
+  // sending non-Printify slugs to the Printify API (422 errors).
+  const isPrintifyId = productId != null && /^\d+$/.test(productId);
+
+  const printifyHook = useProduct(isPrintifyId ? productId : undefined);
   const { session } = useAdminAuth();
   const isAdmin = Boolean(session);
-  const manualHook = useManualProductBySlug(productId, isAdmin);
+  const manualHook = useManualProductBySlug(isPrintifyId ? undefined : productId, isAdmin);
 
   const product = printifyHook.product ?? manualHook.product;
   const loading = !product && (printifyHook.loading || manualHook.loading);
