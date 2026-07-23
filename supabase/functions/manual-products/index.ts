@@ -14,6 +14,15 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -52,8 +61,6 @@ Deno.serve(async (req: Request) => {
 
     // Single product by slug
     if (slug) {
-      // Public visitors can only see public and unlisted products.
-      // Admins with a valid token can preview draft and archived products.
       const allowedVisibilities = isAdmin
         ? ["public", "unlisted", "draft", "archived"]
         : ["public", "unlisted"];
@@ -81,6 +88,12 @@ Deno.serve(async (req: Request) => {
         .eq("product_id", product.id)
         .order("position", { ascending: true });
 
+      const { data: colorways } = await supabase
+        .from("product_colorways")
+        .select("*")
+        .eq("product_id", product.id)
+        .order("sort_order", { ascending: true });
+
       return jsonResponse({
         id: product.id,
         slug: product.slug,
@@ -92,13 +105,27 @@ Deno.serve(async (req: Request) => {
         category: product.category,
         tags: product.tags,
         visibility: product.visibility,
-        images: (images ?? []).map((img, i) => ({
+        colorways: (colorways ?? []).map((cw: any) => ({
+          id: cw.id,
+          productId: cw.product_id,
+          name: cw.name,
+          slug: cw.slug,
+          hexColor: cw.hex_color,
+          sortOrder: cw.sort_order,
+          isActive: cw.is_active,
+          createdAt: cw.created_at,
+          updatedAt: cw.updated_at,
+        })),
+        images: (images ?? []).map((img: any, i: number) => ({
           id: `img-${i}`,
+          dbId: img.id,
           src: img.src,
           alt: product.title,
           position: img.position,
+          colorwayId: img.colorway_id ?? null,
+          isPrimary: img.is_primary ?? false,
         })),
-        variants: (variants ?? []).map(v => ({
+        variants: (variants ?? []).map((v: any) => ({
           id: v.id,
           variantId: v.id,
           sku: null,
@@ -107,6 +134,7 @@ Deno.serve(async (req: Request) => {
           size: v.options?.size ?? null,
           price: new Intl.NumberFormat("en-US", { style: "currency", currency: product.currency || "USD" }).format(v.price_cents / 100),
           priceCents: v.price_cents,
+          colorwayId: v.colorway_id ?? null,
         })),
       });
     }
@@ -120,25 +148,25 @@ Deno.serve(async (req: Request) => {
 
     if (error) return jsonResponse({ error: error.message }, 500);
 
-    const productIds = (products ?? []).map(p => p.id);
-    let imagesByProduct: Record<string, Array<{ src: string; position: number }>> = {};
-    let variantsByProduct: Record<string, Array<{ id: string; price_cents: number; title: string; options: Record<string, string> }>> = {};
+    const productIds = (products ?? []).map((p: any) => p.id);
+    let imagesByProduct: Record<string, Array<any>> = {};
+    let variantsByProduct: Record<string, Array<any>> = {};
 
     if (productIds.length > 0) {
       const { data: images } = await supabase
         .from("product_images")
-        .select("product_id, src, position")
+        .select("product_id, id, src, position, colorway_id, is_primary")
         .in("product_id", productIds)
         .order("position", { ascending: true });
 
       for (const img of images ?? []) {
         if (!imagesByProduct[img.product_id]) imagesByProduct[img.product_id] = [];
-        imagesByProduct[img.product_id].push({ src: img.src, position: img.position });
+        imagesByProduct[img.product_id].push(img);
       }
 
       const { data: variants } = await supabase
         .from("product_variants")
-        .select("id, product_id, price_cents, title, options")
+        .select("id, product_id, price_cents, title, options, colorway_id")
         .eq("is_enabled", true)
         .in("product_id", productIds)
         .order("position", { ascending: true });
@@ -149,7 +177,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const items = (products ?? []).map(p => ({
+    const items = (products ?? []).map((p: any) => ({
       id: p.id,
       slug: p.slug,
       title: p.title,
@@ -160,13 +188,17 @@ Deno.serve(async (req: Request) => {
       category: p.category,
       tags: p.tags,
       visibility: p.visibility,
-      images: (imagesByProduct[p.id] ?? []).map((img, i) => ({
+      colorways: [],
+      images: (imagesByProduct[p.id] ?? []).map((img: any, i: number) => ({
         id: `img-${i}`,
+        dbId: img.id,
         src: img.src,
         alt: p.title,
         position: img.position,
+        colorwayId: img.colorway_id ?? null,
+        isPrimary: img.is_primary ?? false,
       })),
-      variants: (variantsByProduct[p.id] ?? []).map(v => ({
+      variants: (variantsByProduct[p.id] ?? []).map((v: any) => ({
         id: v.id,
         variantId: v.id,
         sku: null,
@@ -175,6 +207,7 @@ Deno.serve(async (req: Request) => {
         size: v.options?.size ?? null,
         price: new Intl.NumberFormat("en-US", { style: "currency", currency: p.currency || "USD" }).format(v.price_cents / 100),
         priceCents: v.price_cents,
+        colorwayId: v.colorway_id ?? null,
       })),
     }));
 

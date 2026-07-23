@@ -125,6 +125,22 @@ export interface PrintifyMockupImage {
   src: string;
   position: string;
   default: boolean;
+  /** Colorway ID this image belongs to, or null for "All colorways" */
+  colorwayId?: string | null;
+  /** Whether this is the primary image for its colorway scope */
+  isPrimary?: boolean;
+}
+
+export interface ProductColorway {
+  id: string;
+  productId: string;
+  name: string;
+  slug: string;
+  hexColor: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface PrintifyVariant {
@@ -137,6 +153,8 @@ export interface PrintifyVariant {
   priceCents: number;
   /** Internal Supabase variant UUID (manual products only) */
   _internalVariantId?: string;
+  /** Colorway ID this variant belongs to (manual products only) */
+  _colorwayId?: string | null;
 }
 
 export interface PrintifyProduct {
@@ -154,6 +172,8 @@ export interface PrintifyProduct {
   _visibility?: ProductVisibility;
   /** Internal Supabase product UUID (manual products only) */
   _internalProductId?: string;
+  /** Colorways for this product (manual products only) */
+  _colorways?: ProductColorway[];
 }
 
 export interface PrintifyProductsResponse {
@@ -178,6 +198,12 @@ export interface CartItem {
   price: string;
   priceCents: number;
   imageUrl: string | null;
+  /** Colorway ID (manual products with colorways only) */
+  colorwayId: string | null;
+  /** Colorway display name snapshot */
+  colorwayName: string | null;
+  /** Colorway thumbnail URL snapshot */
+  colorwayImageUrl: string | null;
   quantity: number;
 }
 

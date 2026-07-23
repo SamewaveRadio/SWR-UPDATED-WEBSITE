@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Minus, Plus, ShoppingBag, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useProduct } from '../hooks/usePrintify';
@@ -6,13 +6,11 @@ import { useManualProductBySlug } from '../hooks/useManualProducts';
 import { useAdminAuth } from '../contexts/AdminAuthContext';
 import { useCartContext } from '../contexts/CartContext';
 import { Navigation } from '../components/Navigation';
+import type { PrintifyMockupImage } from '../types';
 
 export function ProductPage() {
   const { productId } = useParams<{ productId: string }>();
 
-  // Printify product IDs are numeric; manual product slugs are not.
-  // Only fetch from Printify when the param is a numeric ID to avoid
-  // sending non-Printify slugs to the Printify API (422 errors).
   const isPrintifyId = productId != null && /^\d+$/.test(productId);
 
   const printifyHook = useProduct(isPrintifyId ? productId : undefined);
@@ -29,11 +27,16 @@ export function ProductPage() {
 
   const { addToCart, loading: cartLoading } = useCartContext();
 
-  const [selectedColor, setSelectedColor] = useState<string | null>(null);
+  const [selectedColorwayId, setSelectedColorwayId] = useState<string | null>(null);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [adding, setAdding] = useState(false);
+
+  const colorways = useMemo(() => {
+    if (!product?._colorways) return [];
+    return product._colorways.filter(cw => cw.isActive);
+  }, [product]);
 
   const colors = useMemo(() => {
     if (!product) return [];
@@ -53,23 +56,141 @@ export function ProductPage() {
     return Array.from(set);
   }, [product]);
 
+  // Filtered gallery images based on selected colorway
+  const galleryImages = useMemo<PrintifyMockupImage[]>(() => {
+    if (!product) return [];
+
+    if (colorways.length === 0 || !selectedColorwayId) {
+      return product.mockupImages;
+    }
+
+    const colorwayImages = product.mockupImages.filter(
+      (img) => img.colorwayId === selectedColorwayId
+    );
+    const generalImages = product.mockupImages.filter(
+      (img) => !img.colorwayId
+    );
+
+    // Deduplicate by src
+    const seen = new Set<string>();
+    const merged: PrintifyMockupImage[] = [];
+
+    // Put colorway primary first, then other colorway images, then general
+    const colorwayPrimary = colorwayImages.find((img) => img.isPrimary);
+    if (colorwayPrimary) {
+      merged.push(colorwayPrimary);
+      seen.add(colorwayPrimary.src);
+    }
+
+    for (const img of colorwayImages) {
+      if (!seen.has(img.src)) {
+        merged.push(img);
+        seen.add(img.src);
+      }
+    }
+
+    // General primary first, then other general images
+    const generalPrimary = generalImages.find((img) => img.isPrimary);
+    if (generalPrimary && !seen.has(generalPrimary.src)) {
+      merged.push(generalPrimary);
+      seen.add(generalPrimary.src);
+    }
+
+    for (const img of generalImages) {
+      if (!seen.has(img.src)) {
+        merged.push(img);
+        seen.add(img.src);
+      }
+    }
+
+    // Fallback: if no matching images at all, use all product images
+    if (merged.length === 0) {
+      return product.mockupImages;
+    }
+
+    return merged;
+  }, [product, colorways, selectedColorwayId]);
+
+  // Reset image index when gallery changes
+  useEffect(() => {
+    setCurrentImageIndex(0);
+  }, [selectedColorwayId, productId]);
+
+  // Preload nearby colorway images
+  const preloadRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!product || colorways.length === 0) return;
+    for (const cw of colorways) {
+      const cwImages = product.mockupImages.filter((img) => img.colorwayId === cw.id);
+      for (const img of cwImages.slice(0, 1)) {
+        if (!preloadRef.current.has(img.src)) {
+          preloadRef.current.add(img.src);
+          const link = document.createElement('link');
+          link.rel = 'preload';
+          link.as = 'image';
+          link.href = img.src;
+          document.head.appendChild(link);
+        }
+      }
+    }
+  }, [product, colorways]);
+
+  // Auto-select first colorway if product has colorways
+  useEffect(() => {
+    if (colorways.length > 0 && !selectedColorwayId) {
+      setSelectedColorwayId(colorways[0].id);
+    }
+  }, [colorways, selectedColorwayId]);
+
   const activeVariant = useMemo(() => {
     if (!product || product.variants.length === 0) return null;
+
+    // If colorways exist, filter by selected colorway
+    if (colorways.length > 0 && selectedColorwayId) {
+      const matching = product.variants.find(
+        (v) =>
+          v._colorwayId === selectedColorwayId &&
+          (selectedSize ? v.size === selectedSize : true)
+      );
+      if (matching) return matching;
+    }
+
+    // Fallback: match by color string (legacy / Printify)
     return (
       product.variants.find(
         (v) =>
-          (selectedColor ? v.color === selectedColor : true) &&
+          (selectedColorwayId
+            ? v._colorwayId === selectedColorwayId
+            : true) &&
           (selectedSize ? v.size === selectedSize : true)
       ) ?? product.variants[0]
     );
-  }, [product, selectedColor, selectedSize]);
+  }, [product, selectedColorwayId, selectedSize, colorways]);
+
+  // Available sizes for the selected colorway
+  const availableSizes = useMemo(() => {
+    if (!product) return new Set<string>();
+    if (colorways.length === 0 || !selectedColorwayId) {
+      const set = new Set<string>();
+      product.variants.forEach((v) => {
+        if (v.size) set.add(v.size);
+      });
+      return set;
+    }
+    const set = new Set<string>();
+    product.variants.forEach((v) => {
+      if (v._colorwayId === selectedColorwayId && v.size) {
+        set.add(v.size);
+      }
+    });
+    return set;
+  }, [product, selectedColorwayId, colorways]);
 
   useEffect(() => {
     if (product) {
       document.title = `${product.title} — Samewave Radio`;
     }
 
-    // Add noindex/nofollow for unlisted, draft, and archived products
     let noindexMeta: HTMLMetaElement | null = null;
     const needsNoindex = isUnlisted || (isManual && (visibility === 'draft' || visibility === 'archived'));
     if (needsNoindex) {
@@ -87,16 +208,43 @@ export function ProductPage() {
     };
   }, [product, isUnlisted, isManual, visibility]);
 
-  useEffect(() => {
-    setCurrentImageIndex(0);
-  }, [productId]);
-
   const handleAddToCart = async () => {
     if (!activeVariant || !product) return;
 
-    // Archived and draft products cannot be purchased (manual products only)
     if (isManual && (visibility === 'archived' || visibility === 'draft')) {
       return;
+    }
+
+    // Find the colorway name and thumbnail for the selected colorway
+    let colorwayName: string | null = null;
+    let colorwayImageUrl: string | null = null;
+
+    if (selectedColorwayId && product._colorways) {
+      const cw = product._colorways.find((c) => c.id === selectedColorwayId);
+      if (cw) colorwayName = cw.name;
+    }
+
+    // Use colorway primary image for thumbnail, fall back to first gallery image
+    if (selectedColorwayId) {
+      const primaryImg = product.mockupImages.find(
+        (img) => img.colorwayId === selectedColorwayId && img.isPrimary
+      );
+      if (primaryImg) {
+        colorwayImageUrl = primaryImg.src;
+      } else {
+        const anyColorwayImg = product.mockupImages.find(
+          (img) => img.colorwayId === selectedColorwayId
+        );
+        if (anyColorwayImg) colorwayImageUrl = anyColorwayImg.src;
+      }
+    }
+
+    // Fallback to general primary or first image
+    if (!colorwayImageUrl) {
+      const generalPrimary = product.mockupImages.find(
+        (img) => !img.colorwayId && img.isPrimary
+      );
+      colorwayImageUrl = generalPrimary?.src ?? product.mockupImages[0]?.src ?? null;
     }
 
     setAdding(true);
@@ -115,7 +263,10 @@ export function ProductPage() {
           size: activeVariant.size,
           price: activeVariant.price,
           priceCents: activeVariant.priceCents,
-          imageUrl: product.mockupImages[0]?.src ?? null,
+          imageUrl: colorwayImageUrl,
+          colorwayId: isManual ? (selectedColorwayId ?? null) : null,
+          colorwayName: isManual ? colorwayName : null,
+          colorwayImageUrl: isManual ? colorwayImageUrl : null,
         },
         quantity
       );
@@ -125,15 +276,15 @@ export function ProductPage() {
   };
 
   const nextImage = () => {
-    if (product && product.mockupImages.length > 1) {
-      setCurrentImageIndex((prev) => (prev + 1) % product.mockupImages.length);
+    if (galleryImages.length > 1) {
+      setCurrentImageIndex((prev) => (prev + 1) % galleryImages.length);
     }
   };
 
   const prevImage = () => {
-    if (product && product.mockupImages.length > 1) {
+    if (galleryImages.length > 1) {
       setCurrentImageIndex(
-        (prev) => (prev - 1 + product.mockupImages.length) % product.mockupImages.length
+        (prev) => (prev - 1 + galleryImages.length) % galleryImages.length
       );
     }
   };
@@ -185,8 +336,6 @@ export function ProductPage() {
     );
   }
 
-  // Draft and archived manual products are not-found for public visitors
-  // Admins with a valid session can preview them
   if (isManual && (visibility === 'draft' || visibility === 'archived') && !isAdmin) {
     return (
       <div className="min-h-screen bg-black">
@@ -212,8 +361,8 @@ export function ProductPage() {
   }
 
   const canPurchase = !(isManual && (visibility === 'archived' || visibility === 'draft'));
-
-  const hasMultipleImages = product.mockupImages.length > 1;
+  const hasMultipleImages = galleryImages.length > 1;
+  const safeImageIndex = Math.min(currentImageIndex, galleryImages.length - 1);
 
   return (
     <div className="min-h-screen bg-black pb-32 sm:pb-36">
@@ -231,9 +380,10 @@ export function ProductPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-12">
             <div className="relative">
               <div className="aspect-square bg-white/5 rounded overflow-hidden">
-                {product.mockupImages.length > 0 ? (
+                {galleryImages.length > 0 ? (
                   <img
-                    src={product.mockupImages[currentImageIndex].src}
+                    key={galleryImages[safeImageIndex]?.src}
+                    src={galleryImages[safeImageIndex]?.src}
                     alt={product.title}
                     className="w-full h-full object-cover"
                   />
@@ -261,12 +411,12 @@ export function ProductPage() {
                     <ChevronRight className="w-5 h-5" />
                   </button>
                   <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-                    {product.mockupImages.map((_, idx) => (
+                    {galleryImages.map((_, idx) => (
                       <button
                         key={idx}
                         onClick={() => setCurrentImageIndex(idx)}
                         className={`w-2 h-2 rounded-full transition-colors ${
-                          idx === currentImageIndex ? 'bg-white' : 'bg-white/40'
+                          idx === safeImageIndex ? 'bg-white' : 'bg-white/40'
                         }`}
                         aria-label={`View image ${idx + 1}`}
                       />
@@ -277,12 +427,12 @@ export function ProductPage() {
 
               {hasMultipleImages && (
                 <div className="mt-4 grid grid-cols-5 gap-2">
-                  {product.mockupImages.slice(0, 6).map((image, idx) => (
+                  {galleryImages.slice(0, 6).map((image, idx) => (
                     <button
-                      key={image.id}
+                      key={image.id + '-' + idx}
                       onClick={() => setCurrentImageIndex(idx)}
                       className={`aspect-square rounded overflow-hidden border-2 transition-colors ${
-                        idx === currentImageIndex
+                        idx === safeImageIndex
                           ? 'border-white'
                           : 'border-transparent hover:border-white/40'
                       }`}
@@ -323,7 +473,41 @@ export function ProductPage() {
                 </div>
               )}
 
-              {colors.length > 0 && (
+              {/* Colorway selector */}
+              {colorways.length > 0 && (
+                <div className="mb-6">
+                  <label className="block text-white/60 text-sm mb-2">
+                    Color
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {colorways.map((cw) => (
+                      <button
+                        key={cw.id}
+                        onClick={() => {
+                          setSelectedColorwayId(cw.id);
+                          setSelectedSize(null);
+                        }}
+                        className={`flex items-center gap-2 px-4 py-2 text-sm border transition-colors ${
+                          selectedColorwayId === cw.id
+                            ? 'border-white bg-white text-black'
+                            : 'border-white/20 text-white hover:border-white/40'
+                        }`}
+                      >
+                        {cw.hexColor && (
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-white/20"
+                            style={{ backgroundColor: cw.hexColor }}
+                          />
+                        )}
+                        {cw.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Legacy color selector (Printify products without colorways) */}
+              {colorways.length === 0 && colors.length > 0 && (
                 <div className="mb-6">
                   <label className="block text-white/60 text-sm mb-2">
                     Color
@@ -332,9 +516,9 @@ export function ProductPage() {
                     {colors.map((color) => (
                       <button
                         key={color}
-                        onClick={() => setSelectedColor(color)}
+                        onClick={() => setSelectedColorwayId(null)}
                         className={`px-4 py-2 text-sm border transition-colors ${
-                          selectedColor === color
+                          selectedColorwayId === null
                             ? 'border-white bg-white text-black'
                             : 'border-white/20 text-white hover:border-white/40'
                         }`}
@@ -353,11 +537,7 @@ export function ProductPage() {
                   </label>
                   <div className="flex flex-wrap gap-2">
                     {sizes.map((size) => {
-                      const variantAvailable = product.variants.some(
-                        (v) =>
-                          v.size === size &&
-                          (selectedColor ? v.color === selectedColor : true)
-                      );
+                      const variantAvailable = availableSizes.has(size);
                       return (
                         <button
                           key={size}

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { Upload, X, Star, GripVertical, Loader2, AlertCircle, Image as ImageIcon, Link, RotateCcw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -17,12 +17,28 @@ export interface ProductImageRow {
   r2Key?: string | null;
   /** Marks images pending server confirmation — not yet saved to DB */
   pending?: boolean;
+  colorwayId?: string | null;
+  isPrimary?: boolean;
+}
+
+interface ColorwayOption {
+  id?: string;
+  name: string;
+  slug: string;
+  hexColor: string | null;
+  sortOrder: number;
+  isActive: boolean;
 }
 
 interface ImageUploaderProps {
   productId: string | null;
   images: ProductImageRow[];
   onImagesChange: (images: ProductImageRow[]) => void;
+  colorways?: ColorwayOption[];
+  imageFilter?: string;
+  onImageFilterChange?: (filter: string) => void;
+  onSetImageColorway?: (index: number, colorwayId: string | null) => void;
+  onSetImagePrimary?: (index: number) => void;
 }
 
 type UploadStatus = 'uploading' | 'inserting' | 'complete' | 'failed';
@@ -157,7 +173,11 @@ function verifyImageUrl(url: string): Promise<boolean> {
   });
 }
 
-export function ImageUploader({ productId, images, onImagesChange }: ImageUploaderProps) {
+export function ImageUploader({
+  productId, images, onImagesChange,
+  colorways = [], imageFilter = 'all',
+  onImageFilterChange, onSetImageColorway, onSetImagePrimary,
+}: ImageUploaderProps) {
   const [uploads, setUploads] = useState<UploadState[]>([]);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
@@ -322,13 +342,6 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
     onImagesChange(reordered.map((img, i) => ({ ...img, position: i })));
   }, [images, draggingIndex, onImagesChange]);
 
-  const handleSetPrimary = (index: number) => {
-    const reordered = [...images];
-    const [primary] = reordered.splice(index, 1);
-    reordered.unshift(primary);
-    onImagesChange(reordered.map((img, i) => ({ ...img, position: i })));
-  };
-
   const handleRemoveImage = async (index: number) => {
     const img = images[index];
     // If it has a DB id and r2Key, delete from R2 + DB
@@ -348,6 +361,14 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
     onImagesChange(images.map((img, i) => i === index ? { ...img, alt } : img));
   };
 
+  const activeColorways = colorways.filter(cw => cw.isActive);
+
+  const filteredImages = useMemo(() => {
+    if (imageFilter === 'all') return images.map((img, i) => ({ img, originalIndex: i }));
+    if (imageFilter === 'general') return images.map((img, i) => ({ img, originalIndex: i })).filter(({ img }) => !img.colorwayId);
+    return images.map((img, i) => ({ img, originalIndex: i })).filter(({ img }) => img.colorwayId === imageFilter);
+  }, [images, imageFilter]);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
@@ -355,6 +376,32 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
           Product Images
         </label>
       </div>
+
+      {/* Image filter */}
+      {colorways.length > 0 && onImageFilterChange && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          <button
+            onClick={() => onImageFilterChange('all')}
+            className={`px-2.5 py-1 text-xs rounded transition-colors ${imageFilter === 'all' ? 'bg-white text-black' : 'bg-white/10 text-white/60 hover:text-white'}`}
+          >All images</button>
+          <button
+            onClick={() => onImageFilterChange('general')}
+            className={`px-2.5 py-1 text-xs rounded transition-colors ${imageFilter === 'general' ? 'bg-white text-black' : 'bg-white/10 text-white/60 hover:text-white'}`}
+          >General</button>
+          {activeColorways.map(cw => (
+            <button
+              key={cw.id ?? cw.slug}
+              onClick={() => onImageFilterChange(cw.id ?? cw.slug)}
+              className={`px-2.5 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${imageFilter === (cw.id ?? cw.slug) ? 'bg-white text-black' : 'bg-white/10 text-white/60 hover:text-white'}`}
+            >
+              {cw.hexColor && (
+                <span className="w-2.5 h-2.5 rounded-full border border-white/20" style={{ backgroundColor: cw.hexColor }} />
+              )}
+              {cw.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {error && (
         <div className="mb-3 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded text-red-300 text-xs flex items-center gap-2">
@@ -451,21 +498,21 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
       )}
 
       {/* Image grid with drag-and-drop ordering */}
-      {images.length > 0 ? (
+      {filteredImages.length > 0 ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {images.map((img, i) => (
+          {filteredImages.map(({ img, originalIndex }) => (
             <div
-              key={img.id ?? `new-${i}`}
+              key={img.id ?? `new-${originalIndex}`}
               draggable
-              onDragStart={() => setDraggingIndex(i)}
+              onDragStart={() => setDraggingIndex(originalIndex)}
               onDragEnd={() => { setDraggingIndex(null); setDragOverIndex(null); }}
-              onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i); }}
-              onDrop={(e) => handleDrop(e, i)}
+              onDragOver={(e) => { e.preventDefault(); setDragOverIndex(originalIndex); }}
+              onDrop={(e) => handleDrop(e, originalIndex)}
               className={`relative group bg-white/5 rounded-lg p-2 border transition-colors ${
-                dragOverIndex === i && draggingIndex !== null
+                dragOverIndex === originalIndex && draggingIndex !== null
                   ? 'border-white/40'
                   : 'border-white/10'
-              } ${draggingIndex === i ? 'opacity-50' : ''}`}
+              } ${draggingIndex === originalIndex ? 'opacity-50' : ''}`}
             >
               {/* Drag handle */}
               <div className="absolute top-1 left-1 text-white/30 cursor-grab active:cursor-grabbing">
@@ -473,10 +520,10 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
               </div>
 
               {/* Primary badge */}
-              {i === 0 && (
+              {img.isPrimary && (
                 <div className="absolute top-1 right-1 bg-yellow-400/20 text-yellow-300 text-xs px-1.5 py-0.5 rounded flex items-center gap-1">
                   <Star className="w-3 h-3" />
-                  Primary
+                  Primary{img.colorwayId ? ` · ${colorways.find(cw => cw.id === img.colorwayId)?.name ?? ''}` : ''}
                 </div>
               )}
 
@@ -499,24 +546,39 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
               <input
                 type="text"
                 value={img.alt}
-                onChange={(e) => handleAltChange(i, e.target.value)}
+                onChange={(e) => handleAltChange(originalIndex, e.target.value)}
                 placeholder="Alt text"
                 className="w-full px-2 py-1 bg-black/30 text-white text-xs rounded border border-white/10 focus:outline-none focus:border-white/30 placeholder-white/30 mb-1"
               />
 
+              {colorways.length > 0 && onSetImageColorway && (
+                <select
+                  value={img.colorwayId ?? ''}
+                  onChange={(e) => onSetImageColorway(originalIndex, e.target.value || null)}
+                  className="w-full px-2 py-1 bg-black/30 text-white text-xs rounded border border-white/10 focus:outline-none focus:border-white/30 mb-1"
+                >
+                  <option value="" className="bg-black text-white">All colorways</option>
+                  {activeColorways.map(cw => (
+                    <option key={cw.id ?? cw.slug} value={cw.id ?? ''} className="bg-black text-white">
+                      {cw.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+
               {/* Actions */}
               <div className="flex items-center gap-1">
-                {i !== 0 && (
+                {onSetImagePrimary && !img.isPrimary && (
                   <button
-                    onClick={() => handleSetPrimary(i)}
+                    onClick={() => onSetImagePrimary(originalIndex)}
                     className="flex-1 px-2 py-1 text-xs text-white/50 hover:text-yellow-300 border border-white/10 hover:border-yellow-400/30 rounded transition-colors flex items-center justify-center gap-1"
-                    title="Set as primary"
+                    title="Set as primary for this colorway"
                   >
                     <Star className="w-3 h-3" />
                   </button>
                 )}
                 <button
-                  onClick={() => handleRemoveImage(i)}
+                  onClick={() => handleRemoveImage(originalIndex)}
                   className="flex-1 px-2 py-1 text-xs text-white/50 hover:text-red-400 border border-white/10 hover:border-red-400/30 rounded transition-colors flex items-center justify-center gap-1"
                   title="Remove image"
                 >
@@ -528,7 +590,9 @@ export function ImageUploader({ productId, images, onImagesChange }: ImageUpload
         </div>
       ) : (
         <p className="text-white/30 text-xs">
-          No images yet. Upload images to display them on the product page.
+          {images.length === 0
+            ? 'No images yet. Upload images to display them on the product page.'
+            : 'No images match this filter.'}
         </p>
       )}
 

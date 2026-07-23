@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   Plus, X, Eye, Copy, Pencil, Package, Search,
   Save, Send, Archive, AlertCircle, Loader2, Trash2,
+  ArrowUp, ArrowDown,
 } from 'lucide-react';
 import {
   useAdminProducts,
@@ -55,6 +56,7 @@ interface VariantRow {
   options: Record<string, string>;
   priceCents: number;
   inventoryQuantity: number;
+  colorwayId?: string | null;
 }
 
 interface ImageRow {
@@ -64,6 +66,17 @@ interface ImageRow {
   position: number;
   r2Key?: string | null;
   pending?: boolean;
+  colorwayId?: string | null;
+  isPrimary?: boolean;
+}
+
+interface ColorwayRow {
+  id?: string;
+  name: string;
+  slug: string;
+  hexColor: string | null;
+  sortOrder: number;
+  isActive: boolean;
 }
 
 function ProductList() {
@@ -312,6 +325,8 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
   const [allowBackorders, setAllowBackorders] = useState(false);
   const [variants, setVariants] = useState<VariantRow[]>([]);
   const [images, setImages] = useState<ImageRow[]>([]);
+  const [colorways, setColorways] = useState<ColorwayRow[]>([]);
+  const [imageFilter, setImageFilter] = useState<string>('all');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdId, setCreatedId] = useState<string | null>(null);
@@ -338,6 +353,7 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
         options: v.options ?? {},
         priceCents: v.price_cents,
         inventoryQuantity: detail.inventory[v.id] ?? 0,
+        colorwayId: v.colorway_id ?? null,
       })));
       setImages(detail.images.map(img => ({
         id: img.id,
@@ -345,6 +361,16 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
         alt: img.alt ?? '',
         position: img.position,
         r2Key: img.r2_key,
+        colorwayId: img.colorway_id,
+        isPrimary: img.is_primary,
+      })));
+      setColorways((detail.colorways ?? []).map(cw => ({
+        id: cw.id,
+        name: cw.name,
+        slug: cw.slug,
+        hexColor: cw.hex_color,
+        sortOrder: cw.sort_order,
+        isActive: cw.is_active,
       })));
     }
   }, [detail]);
@@ -358,6 +384,58 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
   const handleSlugChange = (value: string) => {
     setSlugEdited(true);
     setSlug(slugify(value) || value);
+  };
+
+  const addColorway = () => {
+    setColorways(prev => [...prev, {
+      name: '',
+      slug: '',
+      hexColor: null,
+      sortOrder: prev.length,
+      isActive: true,
+    }]);
+  };
+
+  const updateColorway = (index: number, field: keyof ColorwayRow, value: string | number | boolean | null) => {
+    setColorways(prev => prev.map((cw, i) => i === index ? { ...cw, [field]: value } : cw));
+  };
+
+  const removeColorway = (index: number) => {
+    const cw = colorways[index];
+    if (!cw) return;
+    const cwId = cw.id;
+    const inUse = variants.some(v => v.colorwayId === cwId) || images.some(img => img.colorwayId === cwId);
+    if (inUse) {
+      setError(`Cannot delete colorway "${cw.name}" — variants or images are assigned to it. Reassign them first.`);
+      return;
+    }
+    setColorways(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const moveColorway = (index: number, direction: 'up' | 'down') => {
+    setColorways(prev => {
+      const next = [...prev];
+      const target = direction === 'up' ? index - 1 : index + 1;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next.map((cw, i) => ({ ...cw, sortOrder: i }));
+    });
+  };
+
+  const setImageColorway = (index: number, colorwayId: string | null) => {
+    setImages(prev => prev.map((img, i) => i === index ? { ...img, colorwayId } : img));
+  };
+
+  const setImagePrimary = (index: number) => {
+    const targetImg = images[index];
+    if (!targetImg) return;
+    const targetColorwayId = targetImg.colorwayId ?? null;
+    setImages(prev => prev.map((img, i) => {
+      if (i === index) return { ...img, isPrimary: true };
+      const imgColorwayId = img.colorwayId ?? null;
+      if (imgColorwayId === targetColorwayId) return { ...img, isPrimary: false };
+      return img;
+    }));
   };
 
   const addVariant = () => {
@@ -399,6 +477,7 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
       options: v.options,
       priceCents: v.priceCents,
       inventoryQuantity: v.inventoryQuantity,
+      colorwayId: v.colorwayId ?? null,
     })),
     images: images.filter(img => img.src.trim()).map((img, i) => ({
       id: img.id,
@@ -406,6 +485,16 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
       alt: img.alt.trim() || undefined,
       position: i,
       r2Key: img.r2Key ?? null,
+      colorwayId: img.colorwayId ?? null,
+      isPrimary: img.isPrimary ?? false,
+    })),
+    colorways: colorways.map((cw, i) => ({
+      id: cw.id,
+      name: cw.name.trim(),
+      slug: cw.slug.trim(),
+      hexColor: cw.hexColor ?? null,
+      sortOrder: cw.sortOrder ?? i,
+      isActive: cw.isActive,
     })),
   });
 
@@ -674,6 +763,75 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
           </div>
         </div>
 
+        {/* Colorways */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <label className={labelClass}>Colorways</label>
+            <button
+              onClick={addColorway}
+              className="inline-flex items-center gap-1 text-xs text-white/60 hover:text-white transition-colors"
+            >
+              <Plus className="w-3 h-3" />
+              Add colorway
+            </button>
+          </div>
+          {colorways.length === 0 && (
+            <p className="text-white/30 text-xs">No colorways. Products without colorways work normally — all images are shown to all visitors.</p>
+          )}
+          <div className="space-y-2">
+            {colorways.map((cw, i) => (
+              <div key={i} className="grid grid-cols-12 gap-2 items-center bg-white/5 p-2 rounded">
+                <div className="col-span-1 flex flex-col gap-0.5">
+                  <button
+                    onClick={() => moveColorway(i, 'up')}
+                    disabled={i === 0}
+                    className="text-white/30 hover:text-white disabled:opacity-20 transition-colors"
+                  >
+                    <ArrowUp className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => moveColorway(i, 'down')}
+                    disabled={i === colorways.length - 1}
+                    className="text-white/30 hover:text-white disabled:opacity-20 transition-colors"
+                  >
+                    <ArrowDown className="w-3 h-3" />
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={cw.name}
+                  onChange={(e) => updateColorway(i, 'name', e.target.value)}
+                  className="col-span-4 px-2 py-1.5 bg-black/30 text-white text-xs rounded border border-white/10 focus:outline-none focus:border-white/30 placeholder-white/30"
+                  placeholder="Colorway name (e.g. Black)"
+                />
+                <input
+                  type="text"
+                  value={cw.hexColor ?? ''}
+                  onChange={(e) => updateColorway(i, 'hexColor', e.target.value || null)}
+                  className="col-span-2 px-2 py-1.5 bg-black/30 text-white text-xs rounded border border-white/10 focus:outline-none focus:border-white/30 placeholder-white/30"
+                  placeholder="#000000"
+                />
+                <label className="col-span-2 flex items-center gap-1.5 text-white/60 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={cw.isActive}
+                    onChange={(e) => updateColorway(i, 'isActive', e.target.checked)}
+                    className="accent-white"
+                  />
+                  Active
+                </label>
+                <button
+                  onClick={() => removeColorway(i)}
+                  className="col-span-3 p-1 text-white/30 hover:text-red-400 transition-colors flex items-center justify-center gap-1 text-xs"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Images */}
         <ImageUploader
           productId={productId}
@@ -685,7 +843,14 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
             position: img.position,
             r2Key: img.r2Key,
             pending: img.pending,
+            colorwayId: img.colorwayId,
+            isPrimary: img.isPrimary,
           })))}
+          colorways={colorways}
+          imageFilter={imageFilter}
+          onImageFilterChange={setImageFilter}
+          onSetImageColorway={setImageColorway}
+          onSetImagePrimary={setImagePrimary}
         />
 
         {/* Unlisted Warning */}

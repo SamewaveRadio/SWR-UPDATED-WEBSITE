@@ -42,6 +42,9 @@ interface CheckoutItemRequest {
   internalProductId: string | null;
   internalVariantId: string | null;
   slug: string | null;
+  colorwayId: string | null;
+  colorwayName: string | null;
+  colorwayImageUrl: string | null;
 }
 
 interface ShippingAddressRequest {
@@ -72,6 +75,9 @@ interface ValidatedLineItem {
   shippingClass: string;
   internalProductId: string | null;
   internalVariantId: string | null;
+  colorwayId: string | null;
+  colorwayName: string | null;
+  colorwayImageUrl: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -387,6 +393,9 @@ Deno.serve(async (req: Request) => {
           shippingClass: "printify",
           internalProductId: null,
           internalVariantId: null,
+          colorwayId: item.colorwayId ?? null,
+          colorwayName: item.colorwayName ?? null,
+          colorwayImageUrl: item.colorwayImageUrl ?? null,
         });
       } else if (item.source === "manual") {
         // Validate manual product
@@ -429,6 +438,9 @@ Deno.serve(async (req: Request) => {
           shippingClass: product.shipping_class || "standard",
           internalProductId: product.id,
           internalVariantId: variant.id,
+          colorwayId: item.colorwayId ?? null,
+          colorwayName: item.colorwayName ?? null,
+          colorwayImageUrl: item.colorwayImageUrl ?? null,
         });
       } else {
         errors.push(`Unknown product source: ${item.source}`);
@@ -517,6 +529,9 @@ Deno.serve(async (req: Request) => {
       sku: item.sku,
       unit_price_cents: item.unitPriceCents,
       quantity: item.quantity,
+      colorway_id: item.colorwayId ?? null,
+      colorway_name: item.colorwayName ?? null,
+      colorway_image_url: item.colorwayImageUrl ?? null,
     }));
 
     const { error: itemsError } = await supabase

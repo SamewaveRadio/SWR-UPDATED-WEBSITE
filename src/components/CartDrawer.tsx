@@ -142,6 +142,9 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
             internalProductId: item.internalProductId,
             internalVariantId: item.internalVariantId,
             slug: item.slug,
+            colorwayId: item.colorwayId,
+            colorwayName: item.colorwayName,
+            colorwayImageUrl: item.colorwayImageUrl,
           })),
           email: form.email,
           shippingAddress: {
@@ -436,9 +439,9 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                         >
                           {line.title}
                         </Link>
-                        {(line.color || line.size) && (
+                        {(line.color || line.size || line.colorwayName) && (
                           <p className="text-white/40 text-xs mt-0.5">
-                            {[line.color, line.size].filter(Boolean).join(' / ')}
+                            {[line.colorwayName || line.color, line.size].filter(Boolean).join(' / ')}
                           </p>
                         )}
                         <p className="text-white/80 text-sm mt-1">{line.price}</p>

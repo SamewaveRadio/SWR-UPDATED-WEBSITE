@@ -16,6 +16,7 @@ interface VariantInput {
   position?: number;
   isEnabled?: boolean;
   inventoryQuantity?: number;
+  colorwayId?: string | null;
 }
 
 interface ImageInput {
@@ -24,6 +25,17 @@ interface ImageInput {
   alt?: string;
   position?: number;
   r2Key?: string | null;
+  colorwayId?: string | null;
+  isPrimary?: boolean;
+}
+
+interface ColorwayInput {
+  id?: string;
+  name: string;
+  slug?: string;
+  hexColor?: string | null;
+  sortOrder?: number;
+  isActive?: boolean;
 }
 
 interface ProductInput {
@@ -43,6 +55,7 @@ interface ProductInput {
   allowBackorders?: boolean;
   variants?: VariantInput[];
   images?: ImageInput[];
+  colorways?: ColorwayInput[];
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -114,7 +127,13 @@ Deno.serve(async (req: Request) => {
           .eq("product_id", product.id)
           .order("position", { ascending: true });
 
-        const variantIds = (variants ?? []).map(v => v.id);
+        const { data: colorways } = await supabase
+          .from("product_colorways")
+          .select("*")
+          .eq("product_id", product.id)
+          .order("sort_order", { ascending: true });
+
+        const variantIds = (variants ?? []).map((v: any) => v.id);
         let inventoryMap: Record<string, number> = {};
         if (variantIds.length > 0) {
           const { data: inventory } = await supabase
@@ -126,7 +145,13 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        return jsonResponse({ product, variants: variants ?? [], images: images ?? [], inventory: inventoryMap });
+        return jsonResponse({
+          product,
+          variants: variants ?? [],
+          images: images ?? [],
+          colorways: colorways ?? [],
+          inventory: inventoryMap,
+        });
       }
 
       // List all products
@@ -137,14 +162,14 @@ Deno.serve(async (req: Request) => {
 
       if (error) return jsonResponse({ error: error.message }, 500);
 
-      const productIds = (products ?? []).map(p => p.id);
+      const productIds = (products ?? []).map((p: any) => p.id);
       let primaryImages: Record<string, string> = {};
       let inventoryStatuses: Record<string, string> = {};
 
       if (productIds.length > 0) {
         const { data: images } = await supabase
           .from("product_images")
-          .select("product_id, src, position")
+          .select("product_id, src, position, is_primary, colorway_id")
           .in("product_id", productIds)
           .order("position", { ascending: true });
 
@@ -162,7 +187,7 @@ Deno.serve(async (req: Request) => {
         const { data: inventory } = await supabase
           .from("inventory_transactions")
           .select("variant_id, quantity")
-          .in("variant_id", (variants ?? []).map(v => v.id));
+          .in("variant_id", (variants ?? []).map((v: any) => v.id));
 
         const invByVariant: Record<string, number> = {};
         for (const tx of inventory ?? []) {
@@ -192,7 +217,7 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      const items = (products ?? []).map(p => ({
+      const items = (products ?? []).map((p: any) => ({
         id: p.id,
         slug: p.slug,
         title: p.title,
@@ -249,6 +274,24 @@ Deno.serve(async (req: Request) => {
 
       if (createError) return jsonResponse({ error: createError.message }, 500);
 
+      // Insert colorways
+      if (body.colorways && body.colorways.length > 0) {
+        const colorwayRows = body.colorways.map((cw, i) => ({
+          product_id: product.id,
+          name: cw.name,
+          slug: cw.slug?.trim() || slugify(cw.name),
+          hex_color: cw.hexColor ?? null,
+          sort_order: cw.sortOrder ?? i,
+          is_active: cw.isActive ?? true,
+        }));
+
+        const { error: cwError } = await supabase
+          .from("product_colorways")
+          .insert(colorwayRows);
+
+        if (cwError) return jsonResponse({ error: cwError.message }, 500);
+      }
+
       // Insert variants
       if (body.variants && body.variants.length > 0) {
         const variantRows = body.variants.map((v, i) => ({
@@ -259,6 +302,7 @@ Deno.serve(async (req: Request) => {
           price_cents: v.priceCents ?? body.basePriceCents ?? 0,
           position: v.position ?? i,
           is_enabled: v.isEnabled ?? true,
+          colorway_id: v.colorwayId ?? null,
         }));
 
         const { data: insertedVariants, error: variantError } = await supabase
@@ -277,7 +321,7 @@ Deno.serve(async (req: Request) => {
               quantity: v.inventoryQuantity ?? 0,
               reason: 'initial',
             }))
-            .filter(r => r.quantity !== 0);
+            .filter((r: any) => r.quantity !== 0);
 
           if (invRows.length > 0) {
             const { error: invError } = await supabase
@@ -296,6 +340,8 @@ Deno.serve(async (req: Request) => {
           alt: img.alt ?? null,
           position: img.position ?? i,
           r2_key: img.r2Key ?? null,
+          colorway_id: img.colorwayId ?? null,
+          is_primary: img.isPrimary ?? (i === 0),
         }));
 
         const { error: imgError } = await supabase
@@ -337,6 +383,48 @@ Deno.serve(async (req: Request) => {
 
       if (updateError) return jsonResponse({ error: updateError.message }, 500);
 
+      // Sync colorways
+      if (body.colorways !== undefined) {
+        const { data: existingColorways } = await supabase
+          .from("product_colorways")
+          .select("id")
+          .eq("product_id", body.id);
+
+        const existingCwIds = new Set((existingColorways ?? []).map((cw: any) => cw.id));
+        const keptCwIds = new Set(body.colorways.filter(cw => cw.id).map(cw => cw.id!));
+        const toDeleteCw = [...existingCwIds].filter(id => !keptCwIds.has(id));
+
+        if (toDeleteCw.length > 0) {
+          await supabase.from("product_colorways").delete().in("id", toDeleteCw);
+        }
+
+        for (const cw of body.colorways) {
+          if (cw.id && existingCwIds.has(cw.id)) {
+            await supabase
+              .from("product_colorways")
+              .update({
+                name: cw.name,
+                slug: cw.slug?.trim() || slugify(cw.name),
+                hex_color: cw.hexColor ?? null,
+                sort_order: cw.sortOrder ?? 0,
+                is_active: cw.isActive ?? true,
+              })
+              .eq("id", cw.id);
+          } else {
+            await supabase
+              .from("product_colorways")
+              .insert({
+                product_id: body.id,
+                name: cw.name,
+                slug: cw.slug?.trim() || slugify(cw.name),
+                hex_color: cw.hexColor ?? null,
+                sort_order: cw.sortOrder ?? 0,
+                is_active: cw.isActive ?? true,
+              });
+          }
+        }
+      }
+
       // Sync variants: replace all
       if (body.variants !== undefined) {
         // Get existing variants
@@ -345,7 +433,7 @@ Deno.serve(async (req: Request) => {
           .select("id")
           .eq("product_id", body.id);
 
-        const existingIds = new Set((existingVariants ?? []).map(v => v.id));
+        const existingIds = new Set((existingVariants ?? []).map((v: any) => v.id));
         const keptIds = new Set(body.variants.filter(v => v.id).map(v => v.id!));
         const toDelete = [...existingIds].filter(id => !keptIds.has(id));
 
@@ -363,6 +451,7 @@ Deno.serve(async (req: Request) => {
                 options: v.options ?? {},
                 price_cents: v.priceCents ?? body.basePriceCents ?? 0,
                 is_enabled: v.isEnabled ?? true,
+                colorway_id: v.colorwayId ?? null,
               })
               .eq("id", v.id);
           } else {
@@ -375,6 +464,7 @@ Deno.serve(async (req: Request) => {
                 options: v.options ?? {},
                 price_cents: v.priceCents ?? body.basePriceCents ?? 0,
                 is_enabled: v.isEnabled ?? true,
+                colorway_id: v.colorwayId ?? null,
               })
               .select()
               .single();
@@ -402,7 +492,7 @@ Deno.serve(async (req: Request) => {
           .eq("product_id", body.id);
 
         const existingR2Keys = new Map(
-          (existingImages ?? []).filter(img => img.r2_key).map(img => [img.id, img.r2_key]),
+          (existingImages ?? []).filter((img: any) => img.r2_key).map((img: any) => [img.id, img.r2_key]),
         );
 
         await supabase.from("product_images").delete().eq("product_id", body.id);
@@ -413,6 +503,8 @@ Deno.serve(async (req: Request) => {
             alt: img.alt ?? null,
             position: img.position ?? i,
             r2_key: img.r2Key ?? null,
+            colorway_id: img.colorwayId ?? null,
+            is_primary: img.isPrimary ?? (i === 0),
           }));
           await supabase.from("product_images").insert(imageRows);
         }

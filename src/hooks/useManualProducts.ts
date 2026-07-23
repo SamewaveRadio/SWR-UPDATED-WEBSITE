@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { PrintifyProduct, PrintifyVariant, PrintifyMockupImage } from '../types';
+import type { PrintifyProduct, PrintifyVariant, PrintifyMockupImage, ProductColorway } from '../types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -14,7 +14,16 @@ interface ManualProductResponse {
   category: string | null;
   tags: string[];
   visibility: string;
-  images: Array<{ id: string; src: string; alt: string; position: number }>;
+  colorways: ProductColorway[];
+  images: Array<{
+    id: string;
+    dbId: string;
+    src: string;
+    alt: string;
+    position: number;
+    colorwayId: string | null;
+    isPrimary: boolean;
+  }>;
   variants: Array<{
     id: string;
     variantId: string;
@@ -24,6 +33,7 @@ interface ManualProductResponse {
     size: string | null;
     price: string;
     priceCents: number;
+    colorwayId: string | null;
   }>;
 }
 
@@ -33,6 +43,8 @@ function toPrintifyFormat(p: ManualProductResponse): PrintifyProduct {
     src: img.src,
     position: String(img.position),
     default: i === 0,
+    colorwayId: img.colorwayId,
+    isPrimary: img.isPrimary,
   }));
 
   const variants: PrintifyVariant[] = p.variants.map((v, i) => ({
@@ -44,6 +56,7 @@ function toPrintifyFormat(p: ManualProductResponse): PrintifyProduct {
     price: v.price,
     priceCents: v.priceCents,
     _internalVariantId: v.id,
+    _colorwayId: v.colorwayId,
   }));
 
   return {
@@ -57,6 +70,7 @@ function toPrintifyFormat(p: ManualProductResponse): PrintifyProduct {
     _slug: p.slug,
     _visibility: p.visibility as 'public' | 'unlisted' | 'draft' | 'archived',
     _internalProductId: p.id,
+    _colorways: p.colorways,
   };
 }
 

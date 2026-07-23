@@ -38,6 +38,20 @@ export interface AdminProductImage {
   alt: string | null;
   position: number;
   r2_key: string | null;
+  colorway_id: string | null;
+  is_primary: boolean;
+}
+
+export interface AdminProductColorway {
+  id: string;
+  product_id: string;
+  name: string;
+  slug: string;
+  hex_color: string | null;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AdminProductDetail {
@@ -69,8 +83,10 @@ export interface AdminProductDetail {
     price_cents: number;
     position: number;
     is_enabled: boolean;
+    colorway_id: string | null;
   }>;
   images: AdminProductImage[];
+  colorways: AdminProductColorway[];
   inventory: Record<string, number>;
 }
 
