@@ -70,6 +70,7 @@ export interface AdminProductDetail {
     visibility: ProductVisibility;
     track_inventory: boolean;
     allow_backorders: boolean;
+    password: string | null;
     is_published: boolean;
     created_at: string;
     updated_at: string;

@@ -75,6 +75,15 @@ Deno.serve(async (req: Request) => {
       if (error) return jsonResponse({ error: error.message }, 500);
       if (!product) return jsonResponse({ error: "Product not found" }, 404);
 
+      // Password gate: if product has a password and caller is not admin,
+      // require the correct password via query param.
+      if (product.password && !isAdmin) {
+        const providedPassword = url.searchParams.get("password") ?? "";
+        if (providedPassword !== product.password) {
+          return jsonResponse({ error: "Password required", passwordRequired: true }, 403);
+        }
+      }
+
       const { data: variants } = await supabase
         .from("product_variants")
         .select("*")
@@ -105,6 +114,7 @@ Deno.serve(async (req: Request) => {
         category: product.category,
         tags: product.tags,
         visibility: product.visibility,
+        passwordRequired: Boolean(product.password),
         colorways: (colorways ?? []).map((cw: any) => ({
           id: cw.id,
           productId: cw.product_id,

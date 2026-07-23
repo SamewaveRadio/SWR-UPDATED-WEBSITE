@@ -53,6 +53,7 @@ interface ProductInput {
   visibility?: 'public' | 'unlisted' | 'draft' | 'archived';
   trackInventory?: boolean;
   allowBackorders?: boolean;
+  password?: string | null;
   variants?: VariantInput[];
   images?: ImageInput[];
   colorways?: ColorwayInput[];
@@ -266,6 +267,7 @@ Deno.serve(async (req: Request) => {
           visibility: body.visibility ?? 'draft',
           track_inventory: body.trackInventory ?? false,
           allow_backorders: body.allowBackorders ?? false,
+          password: body.password ?? null,
           created_by: user.id,
           updated_by: user.id,
         })
@@ -373,6 +375,7 @@ Deno.serve(async (req: Request) => {
       if (body.visibility !== undefined) updateData.visibility = body.visibility;
       if (body.trackInventory !== undefined) updateData.track_inventory = body.trackInventory;
       if (body.allowBackorders !== undefined) updateData.allow_backorders = body.allowBackorders;
+      if (body.password !== undefined) updateData.password = body.password || null;
 
       const { data: product, error: updateError } = await supabase
         .from("products")

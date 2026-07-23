@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Minus, Plus, ShoppingBag, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Lock, Minus, Plus, ShoppingBag, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useProduct } from '../hooks/usePrintify';
 import { useManualProductBySlug } from '../hooks/useManualProducts';
 import { useAdminAuth } from '../contexts/AdminAuthContext';
@@ -24,6 +24,7 @@ export function ProductPage() {
   const visibility = manualHook.visibility;
   const isUnlisted = visibility === 'unlisted';
   const isManual = manualHook.product !== null;
+  const passwordRequired = manualHook.passwordRequired;
 
   const { addToCart, loading: cartLoading } = useCartContext();
 
@@ -32,6 +33,8 @@ export function ProductPage() {
   const [quantity, setQuantity] = useState(1);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [adding, setAdding] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState(false);
 
   const colorways = useMemo(() => {
     if (!product?._colorways) return [];
@@ -211,6 +214,19 @@ export function ProductPage() {
     };
   }, [product, isUnlisted, isManual, visibility]);
 
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordInput) return;
+    setPasswordError(false);
+    manualHook.fetchProduct(passwordInput);
+  };
+
+  useEffect(() => {
+    if (manualHook.passwordRequired && passwordInput) {
+      setPasswordError(true);
+    }
+  }, [manualHook.passwordRequired, passwordInput]);
+
   const handleAddToCart = async () => {
     if (!activeVariant || !product) return;
 
@@ -308,6 +324,58 @@ export function ProductPage() {
                   <div className="h-32 bg-white/5 rounded" />
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (passwordRequired && !product) {
+    return (
+      <div className="min-h-screen bg-black">
+        <Navigation />
+        <div className="pt-20 sm:pt-24 px-4 sm:px-6">
+          <div className="max-w-md mx-auto">
+            <Link
+              to="/shop"
+              className="inline-flex items-center gap-2 text-white/60 hover:text-white text-sm mb-8 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Shop
+            </Link>
+            <div className="bg-white/5 border border-white/10 rounded-lg p-8">
+              <div className="flex items-center gap-3 mb-6">
+                <Lock className="w-6 h-6 text-white/60" />
+                <h1 className="text-xl font-light text-white">Password Required</h1>
+              </div>
+              <p className="text-white/50 text-sm mb-6">
+                This product is password protected. Enter the password to view it.
+              </p>
+              <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                <input
+                  type="password"
+                  value={passwordInput}
+                  onChange={(e) => {
+                    setPasswordInput(e.target.value);
+                    setPasswordError(false);
+                  }}
+                  placeholder="Enter password"
+                  autoFocus
+                  className={`w-full px-4 py-3 bg-white/5 text-white text-sm rounded border ${
+                    passwordError ? 'border-red-500/50' : 'border-white/10'
+                  } focus:outline-none focus:border-white/30 placeholder-white/30`}
+                />
+                {passwordError && (
+                  <p className="text-red-400/80 text-xs">Incorrect password. Please try again.</p>
+                )}
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-white text-black font-medium text-sm tracking-wide hover:bg-white/90 transition-colors"
+                >
+                  Unlock
+                </button>
+              </form>
             </div>
           </div>
         </div>

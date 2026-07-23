@@ -323,6 +323,7 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
   const [visibility, setVisibility] = useState<ProductVisibility>('draft');
   const [trackInventory, setTrackInventory] = useState(false);
   const [allowBackorders, setAllowBackorders] = useState(false);
+  const [password, setPassword] = useState('');
   const [variants, setVariants] = useState<VariantRow[]>([]);
   const [images, setImages] = useState<ImageRow[]>([]);
   const [colorways, setColorways] = useState<ColorwayRow[]>([]);
@@ -346,6 +347,7 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
       setVisibility(p.visibility);
       setTrackInventory(p.track_inventory ?? false);
       setAllowBackorders(p.allow_backorders ?? false);
+      setPassword(p.password ?? '');
       setVariants(detail.variants.map(v => ({
         id: v.id,
         sku: v.sku ?? '',
@@ -471,6 +473,7 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
     visibility: targetVisibility,
     trackInventory,
     allowBackorders,
+    password: password || null,
     variants: variants.map((v, i) => ({
       id: v.id,
       sku: v.sku.trim() || undefined,
@@ -689,6 +692,21 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
             />
             Allow backorders
           </label>
+        </div>
+
+        {/* Password protection (for unlisted products) */}
+        <div>
+          <label className={labelClass}>Password (optional)</label>
+          <input
+            type="text"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className={inputClass}
+            placeholder="Leave blank for no password"
+          />
+          <p className="text-white/30 text-xs mt-1">
+            When set, visitors need this password to view the product page. Only applies to unlisted products.
+          </p>
         </div>
 
         {/* Variants */}
