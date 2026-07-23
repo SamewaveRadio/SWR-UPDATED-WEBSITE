@@ -174,6 +174,8 @@ export interface PrintifyProduct {
   _internalProductId?: string;
   /** Colorways for this product (manual products only) */
   _colorways?: ProductColorway[];
+  /** Shipping class: 'standard' | 'free' (manual) or 'printify' */
+  _shippingClass?: string;
 }
 
 export interface PrintifyProductsResponse {
@@ -204,6 +206,8 @@ export interface CartItem {
   colorwayName: string | null;
   /** Colorway thumbnail URL snapshot */
   colorwayImageUrl: string | null;
+  /** Shipping class snapshot: 'standard' | 'free' | 'printify' */
+  shippingClass: string;
   quantity: number;
 }
 

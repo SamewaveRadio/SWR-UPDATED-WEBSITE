@@ -286,6 +286,7 @@ export function ProductPage() {
           colorwayId: isManual ? (selectedColorwayId ?? null) : null,
           colorwayName: isManual ? colorwayName : null,
           colorwayImageUrl: isManual ? colorwayImageUrl : null,
+          shippingClass: isManual ? (product._shippingClass ?? 'standard') : 'printify',
         },
         quantity
       );

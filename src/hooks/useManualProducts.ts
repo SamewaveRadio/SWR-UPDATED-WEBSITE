@@ -14,6 +14,7 @@ interface ManualProductResponse {
   category: string | null;
   tags: string[];
   visibility: string;
+  shippingClass: string;
   passwordRequired?: boolean;
   colorways: ProductColorway[];
   images: Array<{
@@ -72,6 +73,7 @@ function toPrintifyFormat(p: ManualProductResponse): PrintifyProduct {
     _visibility: p.visibility as 'public' | 'unlisted' | 'draft' | 'archived',
     _internalProductId: p.id,
     _colorways: p.colorways,
+    _shippingClass: p.shippingClass ?? 'standard',
   };
 }
 

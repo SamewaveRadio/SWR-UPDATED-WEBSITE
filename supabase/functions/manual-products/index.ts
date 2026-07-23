@@ -114,6 +114,7 @@ Deno.serve(async (req: Request) => {
         category: product.category,
         tags: product.tags,
         visibility: product.visibility,
+        shippingClass: product.shipping_class ?? "standard",
         passwordRequired: Boolean(product.password),
         colorways: (colorways ?? []).map((cw: any) => ({
           id: cw.id,
@@ -152,7 +153,7 @@ Deno.serve(async (req: Request) => {
     // List only public products for the shop
     const { data: products, error } = await supabase
       .from("products")
-      .select("id, slug, title, description, source, base_price_cents, currency, category, tags, visibility")
+      .select("id, slug, title, description, source, base_price_cents, currency, category, tags, visibility, shipping_class")
       .eq("visibility", "public")
       .order("updated_at", { ascending: false });
 
@@ -198,6 +199,7 @@ Deno.serve(async (req: Request) => {
       category: p.category,
       tags: p.tags,
       visibility: p.visibility,
+      shippingClass: p.shipping_class ?? "standard",
       colorways: [],
       images: (imagesByProduct[p.id] ?? []).map((img: any, i: number) => ({
         id: `img-${i}`,

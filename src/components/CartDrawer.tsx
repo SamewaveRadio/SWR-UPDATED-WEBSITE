@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { X, Minus, Plus, ShoppingBag, Trash2, Loader2, AlertCircle, ChevronUp } from 'lucide-react';
 import { useCartContext } from '../contexts/CartContext';
+import type { CartItem } from '../types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -55,6 +56,61 @@ function validateForm(form: ShippingForm): string | null {
   return null;
 }
 
+const FLAT_SHIPPING_CENTS = 700;
+const FREE_SHIPPING_THRESHOLD_CENTS = 12500;
+
+function normalizeShippingClass(cls: string | undefined): string {
+  return cls === 'free' ? 'free' : 'standard';
+}
+
+interface ShippingEstimate {
+  shippingCents: number;
+  message: string | null;
+}
+
+function calculateShippingEstimate(items: CartItem[]): ShippingEstimate {
+  if (items.length === 0) return { shippingCents: 0, message: null };
+
+  const hasPrintify = items.some((i) => i.source === 'printify');
+  const manualItems = items.filter((i) => i.source === 'manual');
+  const allManualFree =
+    !hasPrintify &&
+    manualItems.length === items.length &&
+    manualItems.length > 0 &&
+    manualItems.every((i) => normalizeShippingClass(i.shippingClass) === 'free');
+
+  const subtotal = items.reduce((sum, i) => sum + i.priceCents * i.quantity, 0);
+
+  if (hasPrintify) {
+    return {
+      shippingCents: FLAT_SHIPPING_CENTS,
+      message: 'Printify items require standard shipping.',
+    };
+  }
+
+  if (allManualFree) {
+    return {
+      shippingCents: 0,
+      message: 'Free shipping applies to this order.',
+    };
+  }
+
+  // Manual-only with at least one standard item
+  if (subtotal >= FREE_SHIPPING_THRESHOLD_CENTS) {
+    return {
+      shippingCents: 0,
+      message: 'You qualify for free shipping.',
+    };
+  }
+
+  const remaining = FREE_SHIPPING_THRESHOLD_CENTS - subtotal;
+  const remainingFormatted = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(remaining / 100);
+  return {
+    shippingCents: FLAT_SHIPPING_CENTS,
+    message: `Spend ${remainingFormatted} more to qualify for free shipping.`,
+  };
+}
+
 export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   const { items, loading, updateQuantity, removeFromCart } = useCartContext();
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -105,6 +161,9 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   const hasPrintify = items.some((i) => i.source === 'printify');
   const hasManual = items.some((i) => i.source === 'manual');
   const mixedOrder = hasPrintify && hasManual;
+
+  const shippingEstimate = calculateShippingEstimate(items);
+  const shippingFormatted = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(shippingEstimate.shippingCents / 100);
 
   const handleCheckoutClick = () => {
     setShowCheckout(true);
@@ -378,8 +437,15 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                     <span className="text-sm">Subtotal</span>
                     <span className="text-sm font-medium">{subtotal}</span>
                   </div>
+                  <div className="flex items-center justify-between text-white">
+                    <span className="text-sm">Shipping</span>
+                    <span className="text-sm font-medium">{shippingFormatted}</span>
+                  </div>
+                  {shippingEstimate.message && (
+                    <p className="text-white/50 text-xs pt-1">{shippingEstimate.message}</p>
+                  )}
                   <p className="text-white/40 text-xs">
-                    Shipping calculated at checkout. Taxes handled by Stripe.
+                    Taxes calculated by Stripe at checkout.
                   </p>
                 </div>
               </div>
@@ -493,8 +559,15 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                   <span className="text-sm">Subtotal</span>
                   <span className="text-lg font-medium">{subtotal}</span>
                 </div>
+                <div className="flex items-center justify-between text-white">
+                  <span className="text-sm">Shipping</span>
+                  <span className="text-sm font-medium">{shippingFormatted}</span>
+                </div>
+                {shippingEstimate.message && (
+                  <p className="text-white/50 text-xs">{shippingEstimate.message}</p>
+                )}
                 <p className="text-white/40 text-xs">
-                  Shipping and taxes calculated at checkout
+                  Final shipping calculated at checkout
                 </p>
                 <button
                   onClick={handleCheckoutClick}

@@ -15,6 +15,13 @@ const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
 
 const SITE_URL = Deno.env.get("SITE_URL") ?? "https://samewave.radio";
 
+// ---------------------------------------------------------------------------
+// Shipping constants (single source of truth for server-side calculation)
+// ---------------------------------------------------------------------------
+
+const FLAT_SHIPPING_CENTS = 700;
+const FREE_SHIPPING_THRESHOLD_CENTS = 12500;
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -197,7 +204,6 @@ async function fetchPrintifyShippingEstimate(
     });
     if (!res.ok) return 0;
     const data = await res.json();
-    // Printify returns shipping costs grouped; sum them
     const shippingGroups = data?.shipping_options ?? data?.shipping ?? [];
     if (Array.isArray(shippingGroups)) {
       return shippingGroups.reduce((sum: number, group: any) => sum + (group?.cost ?? 0), 0);
@@ -209,33 +215,62 @@ async function fetchPrintifyShippingEstimate(
 }
 
 // ---------------------------------------------------------------------------
-// Manual product shipping classes
+// Shipping calculation — priority rules (server-side, authoritative)
 // ---------------------------------------------------------------------------
 
-const MANUAL_SHIPPING_RATES: Record<string, { firstItemCents: number; additionalItemCents: number }> = {
-  standard: { firstItemCents: 495, additionalItemCents: 150 },
-  media: { firstItemCents: 395, additionalItemCents: 100 },
-  heavy: { firstItemCents: 895, additionalItemCents: 350 },
-  free: { firstItemCents: 0, additionalItemCents: 0 },
-};
+function normalizeShippingClass(cls: string | null | undefined): string {
+  if (cls === "free") return "free";
+  return "standard";
+}
 
-function calculateManualShipping(items: ValidatedLineItem[]): number {
-  const manualItems = items.filter((i) => i.source === "manual");
-  if (manualItems.length === 0) return 0;
+interface ShippingCalculation {
+  shippingCents: number;
+  ruleApplied: "printify_flat_rate" | "manual_free_class" | "manual_threshold_free" | "manual_flat_rate";
+  hasPrintifyItems: boolean;
+  allManualItemsFree: boolean;
+  freeShippingApplied: boolean;
+}
 
-  // Group by shipping class, calculate per-class then sum
-  const byClass = new Map<string, number>();
-  for (const item of manualItems) {
-    const cls = item.shippingClass || "standard";
-    byClass.set(cls, (byClass.get(cls) ?? 0) + item.quantity);
+function calculateShipping(validatedItems: ValidatedLineItem[]): ShippingCalculation {
+  const hasPrintifyItems = validatedItems.some((item) => item.source === "printify");
+
+  const manualItems = validatedItems.filter((item) => item.source === "manual");
+
+  const allManualItemsFree =
+    !hasPrintifyItems &&
+    manualItems.length === validatedItems.length &&
+    manualItems.length > 0 &&
+    manualItems.every((item) => normalizeShippingClass(item.shippingClass) === "free");
+
+  const validatedMerchandiseSubtotalCents = validatedItems.reduce(
+    (sum, item) => sum + item.unitPriceCents * item.quantity,
+    0,
+  );
+
+  let shippingCents: number;
+  let ruleApplied: ShippingCalculation["ruleApplied"];
+
+  if (hasPrintifyItems) {
+    shippingCents = FLAT_SHIPPING_CENTS;
+    ruleApplied = "printify_flat_rate";
+  } else if (allManualItemsFree) {
+    shippingCents = 0;
+    ruleApplied = "manual_free_class";
+  } else if (validatedMerchandiseSubtotalCents >= FREE_SHIPPING_THRESHOLD_CENTS) {
+    shippingCents = 0;
+    ruleApplied = "manual_threshold_free";
+  } else {
+    shippingCents = FLAT_SHIPPING_CENTS;
+    ruleApplied = "manual_flat_rate";
   }
 
-  let total = 0;
-  for (const [cls, qty] of byClass) {
-    const rate = MANUAL_SHIPPING_RATES[cls] ?? MANUAL_SHIPPING_RATES.standard;
-    total += rate.firstItemCents + (qty - 1) * rate.additionalItemCents;
-  }
-  return total;
+  return {
+    shippingCents,
+    ruleApplied,
+    hasPrintifyItems,
+    allManualItemsFree,
+    freeShippingApplied: shippingCents === 0,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -435,7 +470,7 @@ Deno.serve(async (req: Request) => {
           sku: variant.sku || null,
           unitPriceCents: variant.price_cents,
           quantity: item.quantity,
-          shippingClass: product.shipping_class || "standard",
+          shippingClass: normalizeShippingClass(product.shipping_class),
           internalProductId: product.id,
           internalVariantId: variant.id,
           colorwayId: item.colorwayId ?? null,
@@ -455,26 +490,23 @@ Deno.serve(async (req: Request) => {
     }
 
     // -------------------------------------------------------------------
-    // 2. Calculate shipping
+    // 2. Calculate shipping (server-side, authoritative)
     // -------------------------------------------------------------------
 
-    const printifyItems = validatedItems.filter((i) => i.source === "printify");
-    const hasPrintify = printifyItems.length > 0;
-    const hasManual = validatedItems.some((i) => i.source === "manual");
+    const shipping = calculateShipping(validatedItems);
 
-    let printifyShippingCents = 0;
+    // Fetch actual Printify fulfillment cost (stored separately, not charged to customer)
+    let printifyFulfillmentCostCents = 0;
+    const printifyItems = validatedItems.filter((i) => i.source === "printify");
     for (const item of printifyItems) {
-      const shipCost = await fetchPrintifyShippingEstimate(
+      const cost = await fetchPrintifyShippingEstimate(
         Number(item.productId),
         Number(item.variantId),
         item.quantity,
         shippingAddress,
       );
-      printifyShippingCents += shipCost;
+      printifyFulfillmentCostCents += cost;
     }
-
-    const manualShippingCents = calculateManualShipping(validatedItems);
-    const totalShippingCents = printifyShippingCents + manualShippingCents;
 
     // -------------------------------------------------------------------
     // 3. Calculate totals
@@ -484,10 +516,10 @@ Deno.serve(async (req: Request) => {
       (sum, i) => sum + i.unitPriceCents * i.quantity,
       0
     );
-    const totalCents = subtotalCents + totalShippingCents;
+    const totalCents = subtotalCents + shipping.shippingCents;
 
     // -------------------------------------------------------------------
-    // 4. Create pending order + order_items
+    // 4. Create pending order + order_items (with shipping snapshots)
     // -------------------------------------------------------------------
 
     const { data: order, error: orderError } = await supabase
@@ -497,7 +529,7 @@ Deno.serve(async (req: Request) => {
         email,
         currency: "USD",
         subtotal_cents: subtotalCents,
-        shipping_cents: totalShippingCents,
+        shipping_cents: shipping.shippingCents,
         total_cents: totalCents,
         shipping_name: shippingAddress.name,
         shipping_address_line1: shippingAddress.line1,
@@ -506,8 +538,15 @@ Deno.serve(async (req: Request) => {
         shipping_state: shippingAddress.state,
         shipping_postal_code: shippingAddress.postalCode,
         shipping_country: shippingAddress.country,
-        has_printify: hasPrintify,
-        has_manual: hasManual,
+        has_printify: shipping.hasPrintifyItems,
+        has_manual: validatedItems.some((i) => i.source === "manual"),
+        shipping_rule_applied: shipping.ruleApplied,
+        has_printify_items: shipping.hasPrintifyItems,
+        all_manual_items_free: shipping.allManualItemsFree,
+        free_shipping_applied: shipping.freeShippingApplied,
+        free_shipping_threshold_snapshot_cents: FREE_SHIPPING_THRESHOLD_CENTS,
+        flat_shipping_rate_snapshot_cents: FLAT_SHIPPING_CENTS,
+        printify_fulfillment_cost_cents: printifyFulfillmentCostCents,
       })
       .select("id")
       .single();
@@ -518,7 +557,7 @@ Deno.serve(async (req: Request) => {
 
     const orderId = order.id;
 
-    // Insert order_items with snapshots
+    // Insert order_items with snapshots (including per-item shipping_class)
     const orderItemsRows = validatedItems.map((item) => ({
       order_id: orderId,
       product_source: item.source,
@@ -532,6 +571,7 @@ Deno.serve(async (req: Request) => {
       colorway_id: item.colorwayId ?? null,
       colorway_name: item.colorwayName ?? null,
       colorway_image_url: item.colorwayImageUrl ?? null,
+      shipping_class_snapshot: item.shippingClass,
     }));
 
     const { error: itemsError } = await supabase
@@ -599,33 +639,32 @@ Deno.serve(async (req: Request) => {
       },
     }));
 
-    // Add shipping as a line item
-    if (totalShippingCents > 0) {
-      lineItems.push({
-        quantity: 1,
-        price_data: {
-          currency: "usd",
-          unit_amount: totalShippingCents,
-          product_data: {
-            name: "Shipping",
-            description: hasPrintify && hasManual
-              ? "Mixed order — items may arrive in separate shipments"
-              : "Shipping",
-          },
-        },
-      });
-    }
-
     const successUrl = `${SITE_URL}/shop/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${SITE_URL}/shop`;
+
+    const shippingOptions = [{
+      shipping_rate_data: {
+        type: "fixed_amount" as const,
+        fixed_amount: {
+          amount: shipping.shippingCents,
+          currency: "usd",
+        },
+        display_name: shipping.shippingCents > 0 ? "Standard Shipping" : "Free Shipping",
+        delivery_estimate: {
+          minimum: { unit: "business_day" as const, value: 3 },
+          maximum: { unit: "business_day" as const, value: 7 },
+        },
+      },
+    }];
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: lineItems,
       customer_email: email,
       shipping_address_collection: {
-        allowed_countries: ["US", "CA", "GB", "AU", "DE", "FR", "NL", "JP"],
+        allowed_countries: ["US"],
       },
+      shipping_options: shippingOptions,
       metadata: {
         order_id: orderId,
       },

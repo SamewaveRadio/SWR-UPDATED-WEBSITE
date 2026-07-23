@@ -77,6 +77,12 @@ interface OrderRow {
   shipping_state: string | null;
   shipping_postal_code: string | null;
   shipping_country: string | null;
+  shipping_rule_applied: string | null;
+  has_printify_items: boolean;
+  all_manual_items_free: boolean;
+  free_shipping_applied: boolean;
+  free_shipping_threshold_snapshot_cents: number;
+  flat_shipping_rate_snapshot_cents: number;
 }
 
 interface OrderItemRow {
@@ -281,10 +287,35 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
     return;
   }
 
-  // Confirm amount and currency match
+  // -----------------------------------------------------------------
+  // Validate Stripe totals against stored order snapshots.
+  // The webhook does NOT recalculate shipping from current product
+  // settings — it uses the snapshots stored when Checkout was created.
+  // -----------------------------------------------------------------
   const stripeAmountTotal = session.amount_total ?? 0;
   const stripeCurrency = (session.currency ?? "usd").toUpperCase();
+  const stripeSubtotal = session.amount_subtotal ?? 0;
+  const stripeShipping = (session as any).shipping_cost?.amount_subtotal
+    ?? (session as any).total_details?.shipping?.amount
+    ?? 0;
+  const stripeTax = (session as any).total_details?.tax?.amount ?? 0;
+  const stripeDiscount = (session as any).total_details?.discount?.amount ?? 0;
 
+  // Shipping must match the stored snapshot exactly
+  if (stripeShipping !== order.shipping_cents) {
+    console.error(
+      `Shipping mismatch: Stripe=${stripeShipping}, DB=${order.shipping_cents}, rule=${order.shipping_rule_applied}`,
+    );
+    return;
+  }
+
+  // Subtotal must match
+  if (stripeSubtotal !== order.subtotal_cents) {
+    console.error(`Subtotal mismatch: Stripe=${stripeSubtotal}, DB=${order.subtotal_cents}`);
+    return;
+  }
+
+  // Total must match (subtotal + shipping + tax - discount)
   if (stripeAmountTotal !== order.total_cents) {
     console.error(`Amount mismatch: Stripe=${stripeAmountTotal}, DB=${order.total_cents}`);
     return;

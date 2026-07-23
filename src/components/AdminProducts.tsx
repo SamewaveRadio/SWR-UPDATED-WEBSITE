@@ -505,6 +505,7 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
   const handleSave = async (targetVisibility: ProductVisibility) => {
     if (!title.trim()) { setError('Title is required'); return; }
     if (!slug.trim()) { setError('Slug is required'); return; }
+    if (!shippingClass) { setError('Shipping class is required'); return; }
 
     setSaving(true);
     setError(null);
@@ -653,11 +654,14 @@ function ProductForm({ productId, onClose, onSaved }: ProductFormProps) {
               onChange={(e) => setShippingClass(e.target.value)}
               className={inputClass}
             >
-              <option value="standard">Standard</option>
-              <option value="express">Express</option>
-              <option value="free">Free</option>
-              <option value="pickup">Pickup</option>
+              <option value="standard">Standard Shipping</option>
+              <option value="free">Free Shipping</option>
             </select>
+            <p className="text-white/30 text-xs mt-1">
+              {shippingClass === 'free'
+                ? 'Free only when the full order contains exclusively manual products marked Free Shipping. Printify or Standard Shipping items override this setting.'
+                : 'Uses the normal $7 shipping fee, with free shipping on eligible manual-only orders of $125 or more.'}
+            </p>
           </div>
         </div>
 
