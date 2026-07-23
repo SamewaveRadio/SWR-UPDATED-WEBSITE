@@ -18,6 +18,17 @@ interface PrintifyImage {
   default: boolean;
 }
 
+interface PrintifyOptionValue {
+  id: number;
+  title: string;
+}
+
+interface PrintifyOption {
+  name: string;
+  type: string;
+  values: PrintifyOptionValue[];
+}
+
 interface PrintifyVariant {
   id: number;
   sku: string;
@@ -26,11 +37,8 @@ interface PrintifyVariant {
   title: string;
   is_enabled: boolean;
   is_available: boolean;
-  options: {
-    color?: string;
-    size?: string;
-    [key: string]: string | undefined;
-  };
+  // options is an array of option value IDs, not a color/size object
+  options: number[];
 }
 
 interface PrintifyExternalRecord {
@@ -46,6 +54,7 @@ interface PrintifyProduct {
   tags: string[];
   images: PrintifyImage[];
   variants: PrintifyVariant[];
+  options: PrintifyOption[];
   is_visible: boolean;
   visible: boolean;
   external: PrintifyExternalRecord | PrintifyExternalRecord[] | null;
@@ -104,6 +113,35 @@ function isPublicProduct(product: PrintifyProduct): boolean {
   return hasPublishedStorefrontRecord;
 }
 
+function buildOptionLookup(product: PrintifyProduct): {
+  colorMap: Map<number, string>;
+  sizeMap: Map<number, string>;
+} {
+  const colorMap = new Map<number, string>();
+  const sizeMap = new Map<number, string>();
+
+  for (const opt of product.options ?? []) {
+    const isColor = opt.type === "color" || /color/i.test(opt.name);
+    const isSize = opt.type === "size" || /size/i.test(opt.name);
+    for (const val of opt.values ?? []) {
+      if (isColor) colorMap.set(val.id, val.title);
+      else if (isSize) sizeMap.set(val.id, val.title);
+    }
+  }
+
+  return { colorMap, sizeMap };
+}
+
+function parseColorSizeFromTitle(title: string): { color: string | null; size: string | null } {
+  // Printify variant titles are typically "Color / Size" or just "Color" or just "Size"
+  const parts = title.split(" / ").map((p) => p.trim());
+  if (parts.length >= 2) {
+    return { color: parts[0], size: parts[1] };
+  }
+  // Single part — can't reliably determine if it's color or size from title alone
+  return { color: null, size: null };
+}
+
 function normalizeProduct(product: PrintifyProduct): NormalizedProduct | null {
   if (!isPublicProduct(product)) return null;
 
@@ -114,17 +152,39 @@ function normalizeProduct(product: PrintifyProduct): NormalizedProduct | null {
     default: img.default,
   }));
 
+  const { colorMap, sizeMap } = buildOptionLookup(product);
+
   const variants = product.variants
     .filter((v) => v.is_enabled && v.is_available)
-    .map<NormalizedVariant>((v) => ({
-      variantId: v.id,
-      sku: v.sku,
-      title: v.title,
-      color: v.options.color ?? null,
-      size: v.options.size ?? null,
-      price: formatPrice(v.price),
-      priceCents: v.price,
-    }));
+    .map<NormalizedVariant>((v) => {
+      // Resolve color/size from the option value IDs in v.options
+      let color: string | null = null;
+      let size: string | null = null;
+
+      if (Array.isArray(v.options)) {
+        for (const optId of v.options) {
+          if (colorMap.has(optId)) color = colorMap.get(optId)!;
+          else if (sizeMap.has(optId)) size = sizeMap.get(optId)!;
+        }
+      }
+
+      // Fallback: parse from title if option lookup didn't yield results
+      if (!color || !size) {
+        const parsed = parseColorSizeFromTitle(v.title);
+        if (!color) color = parsed.color;
+        if (!size) size = parsed.size;
+      }
+
+      return {
+        variantId: v.id,
+        sku: v.sku,
+        title: v.title,
+        color,
+        size,
+        price: formatPrice(v.price),
+        priceCents: v.price,
+      };
+    });
 
   return {
     id: product.id,
