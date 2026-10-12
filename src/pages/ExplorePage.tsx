@@ -51,9 +51,8 @@ interface ArchiveUpload {
 }
 
 interface HostOption {
-  key: string;
-  label: string;
-  r2Names: string[];
+  id: string;
+  name: string;
 }
 
 interface ExploreResponse {
@@ -165,7 +164,7 @@ export default function ExplorePage() {
       try {
         setLoadingTags(true);
 
-        const [mixcloudResponse, r2Response] = await Promise.allSettled([
+        const [mixcloudResponse, r2Response, residentsResponse] = await Promise.allSettled([
           fetch(`${apiUrl}/functions/v1/mixcloud-catalogue-tags`, {
             headers: {
               'Authorization': `Bearer ${apiKey}`,
@@ -173,39 +172,40 @@ export default function ExplorePage() {
           }),
           supabase
             .from('archive_items')
-            .select('tags,host_name')
+            .select('tags,resident_id')
             .eq('is_published', true)
             .eq('processing_status', 'processed')
             .not('audio_url', 'is', null)
             .range(0, 5000),
+          supabase
+            .from('residents')
+            .select('id,name'),
         ]);
 
         const tagSet = new Set<string>();
-        const hostMap = new Map<string, HostOption>();
-        const addHost = (name: string | null | undefined, fromR2: boolean) => {
-          const label = (name || '').trim();
-          if (!label) return;
-          const key = label.toLowerCase();
-          const existing = hostMap.get(key) || { key, label, r2Names: [] };
-          if (fromR2 && !existing.r2Names.includes(label)) existing.r2Names.push(label);
-          hostMap.set(key, existing);
-        };
+        const residentIdsWithShows = new Set<string>();
 
         if (mixcloudResponse.status === 'fulfilled' && mixcloudResponse.value.ok) {
           const data = await mixcloudResponse.value.json();
           if (Array.isArray(data.tags)) data.tags.forEach((tag: string) => tagSet.add(tag));
-          if (Array.isArray(data.hosts)) data.hosts.forEach((host: string) => addHost(host, false));
         }
 
         if (r2Response.status === 'fulfilled' && !r2Response.value.error) {
-          (r2Response.value.data || []).forEach((row: { tags: string[] | null; host_name: string | null }) => {
+          (r2Response.value.data || []).forEach((row: { tags: string[] | null; resident_id: string | null }) => {
             (row.tags || []).forEach((tag) => tagSet.add(tag));
-            addHost(row.host_name, true);
+            if (row.resident_id) residentIdsWithShows.add(row.resident_id);
           });
         }
 
         setAvailableTags(Array.from(tagSet).sort((a, b) => a.localeCompare(b)));
-        setHostOptions(Array.from(hostMap.values()).sort((a, b) => a.label.localeCompare(b.label)));
+
+        if (residentsResponse.status === 'fulfilled' && !residentsResponse.value.error) {
+          setHostOptions(
+            ((residentsResponse.value.data || []) as HostOption[])
+              .filter((resident) => resident.name && residentIdsWithShows.has(resident.id))
+              .sort((a, b) => a.name.localeCompare(b.name))
+          );
+        }
       } catch (err) {
         console.error('Failed to fetch tags:', err);
       } finally {
@@ -242,6 +242,8 @@ export default function ExplorePage() {
   }, [showHostPicker]);
 
   const fetchMixcloudUploads = async (offset: number): Promise<ArchiveUpload[]> => {
+    // Mixcloud shows aren't linked to residents, so they never appear on a resident page.
+    if (selectedHosts.length > 0) return [];
     const params = new URLSearchParams();
     params.set('limit', String(PAGE_SIZE * 2));
     params.set('offset', offset.toString());
@@ -249,7 +251,6 @@ export default function ExplorePage() {
       params.set('tags', selectedTags.join(','));
       params.set('match', matchMode);
     }
-    selectedHosts.forEach((host) => params.append('host', host));
 
     const response = await fetch(`${apiUrl}/functions/v1/mixcloud-catalogue-query?${params.toString()}`, {
       headers: {
@@ -309,13 +310,6 @@ export default function ExplorePage() {
       }
     }
 
-    const r2HostNames = hostOptions
-      .filter((host) => selectedHosts.includes(host.key))
-      .flatMap((host) => host.r2Names);
-    if (selectedHosts.length > 0 && r2HostNames.length === 0) {
-      return [];
-    }
-
     let query = supabase
       .from('archive_items')
       .select('id,title,host_name,resident,description,tracklist,tags,audio_url,artwork_url,mixcloud_url,aired_at,aired_date,duration_seconds')
@@ -329,8 +323,8 @@ export default function ExplorePage() {
       query = query.contains('tags', selectedTags);
     }
 
-    if (r2HostNames.length > 0) {
-      query = query.in('host_name', r2HostNames);
+    if (selectedHosts.length > 0) {
+      query = query.in('resident_id', selectedHosts);
     }
 
     const { data, error } = await query;
@@ -481,11 +475,11 @@ export default function ExplorePage() {
     .sort();
 
   const filteredHostOptions = hostOptions.filter(host =>
-    host.key.includes(hostSearch.trim().toLowerCase()) &&
-    !selectedHosts.includes(host.key)
+    host.name.toLowerCase().includes(hostSearch.trim().toLowerCase()) &&
+    !selectedHosts.includes(host.id)
   );
 
-  const hostLabel = (key: string) => hostOptions.find(host => host.key === key)?.label || key;
+  const hostLabel = (id: string) => hostOptions.find(host => host.id === id)?.name || '';
   const hasFilters = selectedTags.length > 0 || selectedHosts.length > 0;
 
   return (
@@ -570,11 +564,11 @@ export default function ExplorePage() {
                     ) : filteredHostOptions.length > 0 ? (
                       filteredHostOptions.map(host => (
                         <button
-                          key={host.key}
-                          onClick={() => handleHostToggle(host.key)}
+                          key={host.id}
+                          onClick={() => handleHostToggle(host.id)}
                           className="w-full px-3 py-2 text-xs text-left hover:bg-white/5 transition-colors border-b border-white/5 last:border-0"
                         >
-                          {host.label}
+                          {host.name}
                         </button>
                       ))
                     ) : (

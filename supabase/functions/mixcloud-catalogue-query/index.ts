@@ -42,11 +42,6 @@ function matchesTags(
   }
 }
 
-function extractHost(name: string): string {
-  const match = name.match(/^.*\s(?:with|w\s?\/)\s+(.+?)(?:\s*\([^)]*\d[^)]*\))?\s*$/i);
-  return match ? match[1].trim() : '';
-}
-
 const PAGE = 1000;
 
 Deno.serve(async (req: Request) => {
@@ -65,9 +60,6 @@ Deno.serve(async (req: Request) => {
     const matchMode = (url.searchParams.get('match') || 'any') as 'any' | 'all';
 
     const selectedTags = tagsParam ? tagsParam.split(',').filter(Boolean) : [];
-    const selectedHosts = new Set(
-      url.searchParams.getAll('host').map((h) => h.trim().toLowerCase()).filter(Boolean)
-    );
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -86,11 +78,6 @@ Deno.serve(async (req: Request) => {
     }
 
     let filteredItems = allItems;
-    if (selectedHosts.size > 0) {
-      filteredItems = filteredItems.filter((item) =>
-        selectedHosts.has(extractHost(item.name || '').toLowerCase())
-      );
-    }
     if (selectedTags.length > 0) {
       filteredItems = filteredItems.filter((item: CatalogueItem) =>
         matchesTags(item.tags || [], selectedTags, matchMode)
