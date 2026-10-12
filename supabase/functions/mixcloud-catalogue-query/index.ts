@@ -42,6 +42,13 @@ function matchesTags(
   }
 }
 
+function extractHost(name: string): string {
+  const match = name.match(/^.*\s(?:with|w\s?\/)\s+(.+?)(?:\s*\([^)]*\d[^)]*\))?\s*$/i);
+  return match ? match[1].trim() : '';
+}
+
+const PAGE = 1000;
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -58,23 +65,32 @@ Deno.serve(async (req: Request) => {
     const matchMode = (url.searchParams.get('match') || 'any') as 'any' | 'all';
 
     const selectedTags = tagsParam ? tagsParam.split(',').filter(Boolean) : [];
+    const selectedHosts = new Set(
+      url.searchParams.getAll('host').map((h) => h.trim().toLowerCase()).filter(Boolean)
+    );
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch all items (we'll filter in memory for complex tag matching)
-    const { data: allItems, error } = await supabase
-      .from('mixcloud_catalogue')
-      .select('url, name, created_time, pictures, tags')
-      .order('created_time', { ascending: false });
-
-    if (error) {
-      throw error;
+    const allItems: CatalogueItem[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('mixcloud_catalogue')
+        .select('url, name, created_time, pictures, tags')
+        .order('created_time', { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      allItems.push(...((data || []) as CatalogueItem[]));
+      if (!data || data.length < PAGE) break;
     }
 
-    // Filter by tags
-    let filteredItems = allItems || [];
+    let filteredItems = allItems;
+    if (selectedHosts.size > 0) {
+      filteredItems = filteredItems.filter((item) =>
+        selectedHosts.has(extractHost(item.name || '').toLowerCase())
+      );
+    }
     if (selectedTags.length > 0) {
       filteredItems = filteredItems.filter((item: CatalogueItem) =>
         matchesTags(item.tags || [], selectedTags, matchMode)

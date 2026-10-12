@@ -1,0 +1,5 @@
+[functions.mixcloud-catalogue-query]
+verify_jwt = false
+
+[functions.mixcloud-catalogue-tags]
+verify_jwt = false

@@ -12,6 +12,13 @@ interface MixcloudTag {
   url: string;
 }
 
+function extractHost(name: string): string {
+  const match = name.match(/^.*\s(?:with|w\s?\/)\s+(.+?)(?:\s*\([^)]*\d[^)]*\))?\s*$/i);
+  return match ? match[1].trim() : '';
+}
+
+const PAGE = 1000;
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -25,18 +32,24 @@ Deno.serve(async (req: Request) => {
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch all catalogue items with their tags
-    const { data: items, error } = await supabase
-      .from('mixcloud_catalogue')
-      .select('tags');
-
-    if (error) {
-      throw error;
+    const items: { name: string | null; tags: MixcloudTag[] }[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('mixcloud_catalogue')
+        .select('name, tags')
+        .order('created_time', { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      items.push(...(data || []));
+      if (!data || data.length < PAGE) break;
     }
 
-    // Extract unique tag names
+    const hostMap = new Map<string, string>();
     const tagSet = new Set<string>();
-    items?.forEach((item: { tags: MixcloudTag[] }) => {
+    items.forEach((item) => {
+      const host = extractHost(item.name || '');
+      if (host && !hostMap.has(host.toLowerCase())) hostMap.set(host.toLowerCase(), host);
+
       if (Array.isArray(item.tags)) {
         item.tags.forEach((tag: MixcloudTag) => {
           if (tag.name) {
@@ -48,9 +61,10 @@ Deno.serve(async (req: Request) => {
 
     // Sort tags alphabetically
     const tags = Array.from(tagSet).sort();
+    const hosts = Array.from(hostMap.values()).sort((a, b) => a.localeCompare(b));
 
     return new Response(
-      JSON.stringify({ tags }),
+      JSON.stringify({ tags, hosts }),
       {
         headers: {
           ...corsHeaders,

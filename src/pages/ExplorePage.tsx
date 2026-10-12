@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, ExternalLink, X } from 'lucide-react';
+import { Play, ExternalLink, X, ChevronDown } from 'lucide-react';
 import { usePlayer } from '../contexts/PlayerContext';
 import { Navigation } from '../components/Navigation';
 import { supabase } from '../lib/supabase';
@@ -48,6 +48,12 @@ interface ArchiveUpload {
   airedAt?: string;
   durationSeconds?: number;
   tags: ArchiveTag[];
+}
+
+interface HostOption {
+  key: string;
+  label: string;
+  r2Names: string[];
 }
 
 interface ExploreResponse {
@@ -145,6 +151,11 @@ export default function ExplorePage() {
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [loadingTags, setLoadingTags] = useState(true);
   const tagPickerRef = useRef<HTMLDivElement>(null);
+  const [selectedHosts, setSelectedHosts] = useState<string[]>([]);
+  const [showHostPicker, setShowHostPicker] = useState(false);
+  const [hostSearch, setHostSearch] = useState('');
+  const [hostOptions, setHostOptions] = useState<HostOption[]>([]);
+  const hostPickerRef = useRef<HTMLDivElement>(null);
 
   const apiUrl = import.meta.env.VITE_SUPABASE_URL;
   const apiKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -162,7 +173,7 @@ export default function ExplorePage() {
           }),
           supabase
             .from('archive_items')
-            .select('tags')
+            .select('tags,host_name')
             .eq('is_published', true)
             .eq('processing_status', 'processed')
             .not('audio_url', 'is', null)
@@ -170,19 +181,31 @@ export default function ExplorePage() {
         ]);
 
         const tagSet = new Set<string>();
+        const hostMap = new Map<string, HostOption>();
+        const addHost = (name: string | null | undefined, fromR2: boolean) => {
+          const label = (name || '').trim();
+          if (!label) return;
+          const key = label.toLowerCase();
+          const existing = hostMap.get(key) || { key, label, r2Names: [] };
+          if (fromR2 && !existing.r2Names.includes(label)) existing.r2Names.push(label);
+          hostMap.set(key, existing);
+        };
 
         if (mixcloudResponse.status === 'fulfilled' && mixcloudResponse.value.ok) {
           const data = await mixcloudResponse.value.json();
-          (data.tags || []).forEach((tag: string) => tagSet.add(tag));
+          if (Array.isArray(data.tags)) data.tags.forEach((tag: string) => tagSet.add(tag));
+          if (Array.isArray(data.hosts)) data.hosts.forEach((host: string) => addHost(host, false));
         }
 
         if (r2Response.status === 'fulfilled' && !r2Response.value.error) {
-          (r2Response.value.data || []).forEach((row: { tags: string[] | null }) => {
+          (r2Response.value.data || []).forEach((row: { tags: string[] | null; host_name: string | null }) => {
             (row.tags || []).forEach((tag) => tagSet.add(tag));
+            addHost(row.host_name, true);
           });
         }
 
         setAvailableTags(Array.from(tagSet).sort((a, b) => a.localeCompare(b)));
+        setHostOptions(Array.from(hostMap.values()).sort((a, b) => a.label.localeCompare(b.label)));
       } catch (err) {
         console.error('Failed to fetch tags:', err);
       } finally {
@@ -205,6 +228,19 @@ export default function ExplorePage() {
     }
   }, [showTagPicker]);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (hostPickerRef.current && !hostPickerRef.current.contains(event.target as Node)) {
+        setShowHostPicker(false);
+      }
+    };
+
+    if (showHostPicker) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showHostPicker]);
+
   const fetchMixcloudUploads = async (offset: number): Promise<ArchiveUpload[]> => {
     const params = new URLSearchParams();
     params.set('limit', String(PAGE_SIZE * 2));
@@ -213,6 +249,7 @@ export default function ExplorePage() {
       params.set('tags', selectedTags.join(','));
       params.set('match', matchMode);
     }
+    selectedHosts.forEach((host) => params.append('host', host));
 
     const response = await fetch(`${apiUrl}/functions/v1/mixcloud-catalogue-query?${params.toString()}`, {
       headers: {
@@ -272,6 +309,13 @@ export default function ExplorePage() {
       }
     }
 
+    const r2HostNames = hostOptions
+      .filter((host) => selectedHosts.includes(host.key))
+      .flatMap((host) => host.r2Names);
+    if (selectedHosts.length > 0 && r2HostNames.length === 0) {
+      return [];
+    }
+
     let query = supabase
       .from('archive_items')
       .select('id,title,host_name,resident,description,tracklist,tags,audio_url,artwork_url,mixcloud_url,aired_at,aired_date,duration_seconds')
@@ -283,6 +327,10 @@ export default function ExplorePage() {
 
     if (selectedTags.length > 0 && matchMode === 'all') {
       query = query.contains('tags', selectedTags);
+    }
+
+    if (r2HostNames.length > 0) {
+      query = query.in('host_name', r2HostNames);
     }
 
     const { data, error } = await query;
@@ -366,7 +414,7 @@ export default function ExplorePage() {
 
   useEffect(() => {
     fetchUploads();
-  }, [selectedTags, matchMode]);
+  }, [selectedTags, matchMode, selectedHosts]);
 
   const handleLoadMore = () => {
     if (nextCursor && !loadingMore) {
@@ -386,8 +434,21 @@ export default function ExplorePage() {
     setSelectedTags(prev => prev.filter(t => t !== tag));
   };
 
-  const handleClearTags = () => {
+  const handleHostToggle = (key: string) => {
+    setSelectedHosts(prev =>
+      prev.includes(key) ? prev.filter(h => h !== key) : [...prev, key]
+    );
+    setHostSearch('');
+    setShowHostPicker(false);
+  };
+
+  const handleRemoveHost = (key: string) => {
+    setSelectedHosts(prev => prev.filter(h => h !== key));
+  };
+
+  const handleClearFilters = () => {
     setSelectedTags([]);
+    setSelectedHosts([]);
   };
 
   const handlePlay = (upload: ArchiveUpload) => {
@@ -419,6 +480,14 @@ export default function ExplorePage() {
     )
     .sort();
 
+  const filteredHostOptions = hostOptions.filter(host =>
+    host.key.includes(hostSearch.trim().toLowerCase()) &&
+    !selectedHosts.includes(host.key)
+  );
+
+  const hostLabel = (key: string) => hostOptions.find(host => host.key === key)?.label || key;
+  const hasFilters = selectedTags.length > 0 || selectedHosts.length > 0;
+
   return (
     <div className="min-h-screen bg-black text-white pb-32 sm:pb-36">
       <Navigation />
@@ -433,9 +502,10 @@ export default function ExplorePage() {
             <div className="relative" ref={tagPickerRef}>
               <button
                 onClick={() => setShowTagPicker(!showTagPicker)}
-                className="px-3 py-1.5 text-base sm:text-xs border border-white/20 hover:border-white/40 transition-colors"
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-base sm:text-xs border transition-colors ${showTagPicker ? 'border-white/60' : 'border-white/20 hover:border-white/40'}`}
               >
-                + Add Tag
+                Genres
+                <ChevronDown className={`w-3 h-3 transition-transform ${showTagPicker ? 'rotate-180' : ''}`} />
               </button>
 
               {showTagPicker && (
@@ -444,14 +514,14 @@ export default function ExplorePage() {
                     type="text"
                     value={tagSearch}
                     onChange={(e) => setTagSearch(e.target.value)}
-                    placeholder="Search tags..."
+                    placeholder="Search genres..."
                     className="w-full px-3 py-2 bg-black border-b border-white/10 text-base text-white placeholder-white/40 focus:outline-none"
                     autoFocus
                   />
                   <div className="max-h-60 overflow-y-auto">
                     {loadingTags ? (
                       <div className="px-3 py-4 text-xs text-white/40 text-center">
-                        Loading tags...
+                        Loading genres...
                       </div>
                     ) : filteredAvailableTags.length > 0 ? (
                       filteredAvailableTags.map(tag => (
@@ -465,13 +535,68 @@ export default function ExplorePage() {
                       ))
                     ) : (
                       <div className="px-3 py-4 text-xs text-white/40 text-center">
-                        No tags found
+                        No genres found
                       </div>
                     )}
                   </div>
                 </div>
               )}
             </div>
+
+            <div className="relative" ref={hostPickerRef}>
+              <button
+                onClick={() => setShowHostPicker(!showHostPicker)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-base sm:text-xs border transition-colors ${showHostPicker ? 'border-white/60' : 'border-white/20 hover:border-white/40'}`}
+              >
+                Hosts
+                <ChevronDown className={`w-3 h-3 transition-transform ${showHostPicker ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showHostPicker && (
+                <div className="absolute top-full left-0 mt-1 w-64 bg-black border border-white/20 shadow-xl z-20">
+                  <input
+                    type="text"
+                    value={hostSearch}
+                    onChange={(e) => setHostSearch(e.target.value)}
+                    placeholder="Search hosts..."
+                    className="w-full px-3 py-2 bg-black border-b border-white/10 text-base text-white placeholder-white/40 focus:outline-none"
+                    autoFocus
+                  />
+                  <div className="max-h-60 overflow-y-auto">
+                    {loadingTags ? (
+                      <div className="px-3 py-4 text-xs text-white/40 text-center">
+                        Loading hosts...
+                      </div>
+                    ) : filteredHostOptions.length > 0 ? (
+                      filteredHostOptions.map(host => (
+                        <button
+                          key={host.key}
+                          onClick={() => handleHostToggle(host.key)}
+                          className="w-full px-3 py-2 text-xs text-left hover:bg-white/5 transition-colors border-b border-white/5 last:border-0"
+                        >
+                          {host.label}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-3 py-4 text-xs text-white/40 text-center">
+                        No hosts found
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {selectedHosts.map(key => (
+              <button
+                key={`host-${key}`}
+                onClick={() => handleRemoveHost(key)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-white bg-white/10 text-white hover:bg-white/20 transition-colors"
+              >
+                {hostLabel(key)}
+                <X className="w-3 h-3" />
+              </button>
+            ))}
 
             {selectedTags.map(tag => (
               <button
@@ -493,9 +618,9 @@ export default function ExplorePage() {
               </button>
             )}
 
-            {selectedTags.length > 0 && (
+            {hasFilters && (
               <button
-                onClick={handleClearTags}
+                onClick={handleClearFilters}
                 className="px-3 py-1.5 text-xs text-white/40 hover:text-white transition-colors"
               >
                 Clear
@@ -528,7 +653,7 @@ export default function ExplorePage() {
           </div>
         ) : uploads.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-white/60">No uploads match these tags</p>
+            <p className="text-white/60">No uploads match these filters</p>
           </div>
         ) : (
           <>
